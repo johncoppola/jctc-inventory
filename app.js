@@ -84,7 +84,7 @@ function calcTier(cosmetic, functional, powersOn, coreFunction) {
 function calcItem(item) {
   const lot = DATA.lots.find(l => l.id == item.lotId);
   item.unitCost = lot ? lot.costPerUnit : 0;
-  if (!item.tier) item.tier = calcTier(item.cosmeticGrade, item.functionalGrade, item.powersOn, item.coreFunction);
+  if (item.tier === undefined) item.tier = '';
   const sale = Number(item.salePrice) || 0;
   const fees = Number(item.platformFees) || 0;
   const ship = Number(item.shippingCost) || 0;
@@ -316,12 +316,7 @@ async function saveItem() {
       missingItems: document.getElementById('itemMissing').value,
       cosmeticGrade: document.getElementById('itemCosmetic').value,
       functionalGrade: document.getElementById('itemFunctional').value,
-      tier: calcTier(
-        document.getElementById('itemCosmetic').value,
-        document.getElementById('itemFunctional').value,
-        document.getElementById('itemPowers').value,
-        document.getElementById('itemFunction').value
-      ),
+      tier: '',
       listedCondition: '',
       listingStatus: 1,
       listingChannel: '',
