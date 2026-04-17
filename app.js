@@ -627,7 +627,7 @@ function _chartDefaults() {
     responsive: true,
     maintainAspectRatio: false,
     plugins: {
-      legend: { labels: { color: CHART_COLORS.text, font: { size: 11 }, padding: 12, usePointStyle: true, pointStyleWidth: 8 } },
+      legend: { labels: { color: CHART_COLORS.text, font: { size: 11 }, padding: 12, usePointStyle: true, pointStyle: 'circle', boxWidth: 8, boxHeight: 8 } },
       tooltip: { backgroundColor: '#1a1d27', titleColor: '#e4e7ef', bodyColor: '#e4e7ef', borderColor: '#2e3347', borderWidth: 1, padding: 10, cornerRadius: 6, titleFont: { size: 12 }, bodyFont: { size: 12 } }
     }
   };
@@ -679,7 +679,7 @@ function renderChartCondition() {
 function renderChartAging() {
   const open = DATA.items.filter(i => i.listingStatus != 5);
   const today = new Date();
-  const buckets = { '0–30 days': 0, '30–60 days': 0, '60–90 days': 0, '90–120 days': 0, '120+ days': 0 };
+  const buckets = { '0–15 days': 0, '15–30 days': 0, '30–45 days': 0, '45–60 days': 0, '60+ days': 0 };
 
   open.forEach(i => {
     // Use dateListed, or fall back to lot date, or treat as old
@@ -688,13 +688,13 @@ function renderChartAging() {
       const lot = DATA.lots.find(l => l.id == i.lotId);
       entryDate = lot ? lot.date : null;
     }
-    if (!entryDate) { buckets['120+ days']++; return; }
+    if (!entryDate) { buckets['60+ days']++; return; }
     const days = Math.floor((today - new Date(entryDate + 'T00:00:00')) / 86400000);
-    if (days < 30) buckets['0–30 days']++;
-    else if (days < 60) buckets['30–60 days']++;
-    else if (days < 90) buckets['60–90 days']++;
-    else if (days < 120) buckets['90–120 days']++;
-    else buckets['120+ days']++;
+    if (days < 15) buckets['0–15 days']++;
+    else if (days < 30) buckets['15–30 days']++;
+    else if (days < 45) buckets['30–45 days']++;
+    else if (days < 60) buckets['45–60 days']++;
+    else buckets['60+ days']++;
   });
 
   const labels = Object.keys(buckets);
@@ -860,6 +860,9 @@ function renderChartCumulative() {
     },
     options: {
       ..._chartDefaults(),
+      plugins: { ..._chartDefaults().plugins,
+        tooltip: { ..._chartDefaults().plugins.tooltip, callbacks: { label: ctx => ctx.dataset.label + ': $' + ctx.raw.toLocaleString() } }
+      },
       scales: {
         x: { ..._scaleDefaults().x },
         y: { ..._scaleDefaults().y, ticks: { ..._scaleDefaults().y.ticks, callback: v => '$' + v.toLocaleString() } }
