@@ -48,14 +48,15 @@ header h1 span { color: var(--accent); }
 .table-wrap { overflow: auto; max-height: calc(100vh - 200px); border: 1px solid var(--border); border-radius: 8px; }
 table { width: 100%; border-collapse: collapse; font-size: 13px; table-layout: fixed; }
 th { background: var(--surface2); padding: 10px 12px; text-align: left; font-weight: 600; font-size: 12px; color: var(--text-dim); text-transform: uppercase; letter-spacing: .5px; position: sticky; top: 0; z-index: 2; white-space: nowrap; user-select: none; overflow: hidden; text-overflow: ellipsis; }
-th .col-resize { position: absolute; right: -3px; top: 0; bottom: 0; width: 7px; cursor: col-resize; background: transparent; z-index: 3; }
-th .col-resize:hover { background: var(--accent); width: 3px; right: -1px; }
+th .col-resize { position: absolute; right: -10px; top: 0; bottom: 0; width: 21px; cursor: col-resize; background: transparent; z-index: 3; }
+th .col-resize::after { content: ''; position: absolute; top: 25%; bottom: 25%; left: 50%; width: 3px; margin-left: -1.5px; border-radius: 2px; background: transparent; transition: background .15s; }
+th .col-resize:hover::after { background: var(--accent); }
 th:hover { color: var(--text); cursor: pointer; }
 th .sort-arrow { margin-left: 4px; font-size: 10px; opacity: 0.4; }
 th.sorted .sort-arrow { opacity: 1; color: var(--accent); }
 body.col-resizing { cursor: col-resize !important; user-select: none !important; }
 body.col-resizing th, body.col-resizing td, body.col-resizing tr { cursor: col-resize !important; }
-body.col-resizing .col-resize.active { background: var(--accent); width: 3px; right: -1px; }
+body.col-resizing .col-resize.active::after { background: var(--accent); }
 td { padding: 8px 12px; border-top: 1px solid var(--border); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 /* Freeze SKU column (first column) when scrolling horizontally */
 th:first-child { position: sticky; left: 0; z-index: 4; }
