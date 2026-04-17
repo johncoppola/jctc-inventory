@@ -38,6 +38,9 @@ CREATE TABLE items (
   listing_channel  TEXT NOT NULL DEFAULT '',
   list_price       NUMERIC(10,2) NOT NULL DEFAULT 0,
   date_listed      DATE,
+  listing_channel_2 TEXT NOT NULL DEFAULT '',
+  list_price_2     NUMERIC(10,2) NOT NULL DEFAULT 0,
+  date_listed_2    DATE,
   sale_price       NUMERIC(10,2) NOT NULL DEFAULT 0,
   date_sold        DATE,
   payment_method   TEXT NOT NULL DEFAULT '',
@@ -84,3 +87,12 @@ CREATE POLICY "Allow all on items" ON items
 
 CREATE POLICY "Allow all on app_config" ON app_config
   FOR ALL USING (true) WITH CHECK (true);
+
+-- =====================================================
+-- MIGRATION: Add second listing channel columns
+-- Run this in the Supabase SQL Editor if you already
+-- have an existing database (one time).
+-- =====================================================
+-- ALTER TABLE items ADD COLUMN listing_channel_2 TEXT NOT NULL DEFAULT '';
+-- ALTER TABLE items ADD COLUMN list_price_2 NUMERIC(10,2) NOT NULL DEFAULT 0;
+-- ALTER TABLE items ADD COLUMN date_listed_2 DATE;

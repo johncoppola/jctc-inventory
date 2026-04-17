@@ -148,6 +148,61 @@ td select.tier-select-3 { color: var(--red); font-weight: 600; }
 .chart-container canvas { width: 100% !important; height: 100% !important; }
 .chart-empty { display: flex; align-items: center; justify-content: center; height: 180px; color: var(--text-dim); font-size: 13px; }
 
+/* Aged row highlighting (stale listings) */
+tr.age-warning td { background: rgba(251,191,36,.10); }
+tr.age-warning:hover td { background: rgba(251,191,36,.16); }
+tr.age-warning td:first-child { background: rgba(251,191,36,.10); }
+tr.age-warning:hover td:first-child { background: rgba(251,191,36,.16); }
+
+tr.age-danger td { background: rgba(248,113,113,.10); }
+tr.age-danger:hover td { background: rgba(248,113,113,.16); }
+tr.age-danger td:first-child { background: rgba(248,113,113,.10); }
+tr.age-danger:hover td:first-child { background: rgba(248,113,113,.16); }
+
+/* Dual-row cells (stacked channel / price / date) */
+td.dual-cell { padding: 4px 6px; }
+td.dual-cell > select,
+td.dual-cell > input,
+td.dual-cell > .dual-money { display: block; width: 100%; margin: 0; }
+/* Top row styling */
+td.dual-cell > select:first-child,
+td.dual-cell > input:first-child,
+td.dual-cell > .dual-money:first-child { border-bottom: 1px dashed var(--border); }
+td.dual-cell > select:first-child,
+td.dual-cell > input:first-child { border-radius: 4px 4px 0 0; }
+/* Bottom row styling */
+td.dual-cell > .ch2-select,
+td.dual-cell > .dl2-input,
+td.dual-cell > .dual-money:last-child { opacity: 0.4; }
+td.dual-cell > .ch2-select { border-radius: 0 0 4px 4px; }
+td.dual-cell > .dl2-input { border-radius: 0 0 4px 4px; }
+/* Hover/focus shows the second row */
+td.dual-cell > .ch2-select:focus,
+td.dual-cell > .ch2-select:hover,
+td.dual-cell > .dl2-input:focus,
+td.dual-cell > .dl2-input:hover,
+td.dual-cell > .dual-money:last-child:hover,
+td.dual-cell > .dual-money:last-child input:focus { opacity: 1; }
+/* When second channel has a value, make it fully visible */
+td.dual-cell > .ch2-select.has-value,
+td.dual-cell > .dl2-input.has-value,
+td.dual-cell > .dual-money.has-value { opacity: 1; }
+.dual-money { display: block; white-space: nowrap; color: var(--text-dim); font-size: 13px; }
+.dual-money input { display: inline; width: calc(100% - 10px); }
+
+/* Stale filter button */
+.stale-filter-group { display: flex; gap: 0; margin-left: 8px; }
+.stale-btn { padding: 6px 14px; border: 1px solid var(--border); background: var(--surface); color: var(--text-dim); font-size: 12px; font-weight: 500; cursor: pointer; transition: all .15s; }
+.stale-btn:first-child { border-radius: 6px 0 0 6px; }
+.stale-btn:last-child { border-radius: 0 6px 6px 0; }
+.stale-btn:not(:first-child) { border-left: none; }
+.stale-btn:hover { color: var(--text); background: var(--surface2); }
+.stale-btn.active { font-weight: 600; color: #fff; }
+.stale-btn.active[data-stale="all"] { background: var(--accent); border-color: var(--accent); }
+.stale-btn.active[data-stale="warning"] { background: var(--yellow); border-color: var(--yellow); color: #000; }
+.stale-btn.active[data-stale="danger"] { background: var(--red); border-color: var(--red); }
+.stale-badge { font-size: 10px; padding: 1px 5px; border-radius: 8px; margin-left: 4px; background: rgba(255,255,255,.2); }
+
 /* Toast notification */
 .toast { position: fixed; bottom: 20px; right: 20px; background: var(--surface2); border: 1px solid var(--green); color: var(--green); padding: 12px 20px; border-radius: 8px; font-size: 13px; z-index: 200; transform: translateY(100px); opacity: 0; transition: all .3s; }
 .toast.show { transform: translateY(0); opacity: 1; }

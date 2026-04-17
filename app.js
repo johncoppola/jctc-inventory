@@ -9,6 +9,7 @@ const ITEM_DB_TO_JS = {
   cosmetic_grade: 'cosmeticGrade', functional_grade: 'functionalGrade',
   tier: 'tier', listed_condition: 'listedCondition', listing_status: 'listingStatus',
   listing_channel: 'listingChannel', list_price: 'listPrice', date_listed: 'dateListed',
+  listing_channel_2: 'listingChannel2', list_price_2: 'listPrice2', date_listed_2: 'dateListed2',
   sale_price: 'salePrice', date_sold: 'dateSold', payment_method: 'paymentMethod',
   platform_fees: 'platformFees', shipping_cost: 'shippingCost',
   other_costs: 'otherCosts', notes: 'notes'
@@ -101,9 +102,42 @@ function calcItem(item) {
   return item;
 }
 
+// Helper: after the 2nd-channel select changes, toggle has-value on sibling price/date cells
+function syncDualVisibility(selectEl) {
+  const row = selectEl.closest('tr');
+  if (!row) return;
+  const hasVal = !!selectEl.value;
+  row.querySelectorAll('.dual-money:last-child, .dl2-input').forEach(el => {
+    el.classList.toggle('has-value', hasVal);
+  });
+}
+
 function statusLabel(s) {
   const match = DROPDOWN_OPTIONS.listingStatus.find(o => o.value == s);
   return match ? match.label : 'Unknown';
+}
+
+// ===== LISTING AGE HELPERS =====
+// Returns the number of days since the oldest active listing date.
+// Considers both dateListed and dateListed2, uses the earliest.
+function getListingAgeDays(item) {
+  const dates = [item.dateListed, item.dateListed2].filter(Boolean);
+  if (!dates.length) return null;
+  const today = new Date();
+  // Use the earliest (oldest) listing date to catch the stalest listing
+  const oldest = dates.sort()[0];
+  return Math.floor((today - new Date(oldest + 'T00:00:00')) / 86400000);
+}
+
+// Returns 'danger' (30+), 'warning' (21-29), or '' based on listing age.
+// Only applies to items with listingStatus == 2 (Listed).
+function getAgingClass(item) {
+  if (item.listingStatus != 2) return '';
+  const days = getListingAgeDays(item);
+  if (days == null) return '';
+  if (days >= 30) return 'age-danger';
+  if (days >= 21) return 'age-warning';
+  return '';
 }
 
 // ===== CUSTOMIZABLE DROPDOWN OPTIONS =====
@@ -322,6 +356,9 @@ async function saveItem() {
       listingChannel: '',
       listPrice: 0,
       dateListed: null,
+      listingChannel2: '',
+      listPrice2: 0,
+      dateListed2: null,
       salePrice: 0,
       dateSold: null,
       paymentMethod: '',
@@ -369,7 +406,7 @@ const _updateTimers = {};
 function updateField(sku, field, value) {
   const item = DATA.items.find(i => i.sku === sku);
   if (!item) return;
-  if (['listPrice','salePrice','platformFees','shippingCost','otherCosts','msrp','listingStatus'].includes(field)) {
+  if (['listPrice','listPrice2','salePrice','platformFees','shippingCost','otherCosts','msrp','listingStatus'].includes(field)) {
     item[field] = Number(value) || 0;
     if (field === 'msrp') item[field] = Math.round(item[field]);
   } else {
@@ -407,7 +444,7 @@ function updateField(sku, field, value) {
       if (!dbField) return;
       let dbValue = item[field];
       // Convert empty date strings to null for date columns
-      if ((field === 'dateListed' || field === 'dateSold') && dbValue === '') dbValue = null;
+      if ((field === 'dateListed' || field === 'dateListed2' || field === 'dateSold') && dbValue === '') dbValue = null;
       await supabase.update('items', `sku=eq.${sku}`, { [dbField]: dbValue });
     } catch (err) {
       console.error(`updateField(${sku}, ${field}) error:`, err);
@@ -435,7 +472,8 @@ function makeInput(sku, field, value, type='text') {
 
 function itemRow(item, showAllCols=true) {
   const statusOpts = DROPDOWN_OPTIONS.listingStatus;
-  let html = `<tr data-sku="${item.sku}">`;
+  const ageCls = getAgingClass(item);
+  let html = `<tr data-sku="${item.sku}" class="${ageCls}">`;
   html += `<td>${item.sku}</td>`;
   html += `<td>Lot ${item.lotId}</td>`;
   html += `<td>${makeInput(item.sku,'brand',item.brand)}</td>`;
@@ -452,9 +490,12 @@ function itemRow(item, showAllCols=true) {
   </select></td>`;
   html += `<td>${makeSelect(item.sku,'listedCondition',conditionOptions(),item.listedCondition)}</td>`;
   html += `<td>${makeSelect(item.sku,'listingStatus',statusOpts,item.listingStatus)}</td>`;
-  html += `<td>${makeSelect(item.sku,'listingChannel',channelOptions(),item.listingChannel)}</td>`;
-  html += `<td class="money-cell">$${makeInput(item.sku,'listPrice',item.listPrice||'','number')}</td>`;
-  html += `<td>${makeInput(item.sku,'dateListed',item.dateListed,'date')}</td>`;
+  const ch2cls = item.listingChannel2 ? ' has-value' : '';
+  const p2cls = (item.listPrice2 && Number(item.listPrice2) > 0) ? ' has-value' : '';
+  const d2cls = item.dateListed2 ? ' has-value' : '';
+  html += `<td class="dual-cell">${makeSelect(item.sku,'listingChannel',channelOptions(),item.listingChannel)}<select class="ch2-select${ch2cls}" onchange="updateField(${item.sku},'listingChannel2',this.value);this.classList.toggle('has-value',!!this.value);syncDualVisibility(this)">${channelOptions().map(o => `<option value="${o}" ${o==(item.listingChannel2||'')?'selected':''}>${o}</option>`).join('')}</select></td>`;
+  html += `<td class="dual-cell money-cell"><span class="dual-money">$${makeInput(item.sku,'listPrice',item.listPrice||'','number')}</span><span class="dual-money${p2cls}">$${makeInput(item.sku,'listPrice2',item.listPrice2||'','number')}</span></td>`;
+  html += `<td class="dual-cell">${makeInput(item.sku,'dateListed',item.dateListed,'date')}<input class="dl2-input${d2cls}" type="date" value="${item.dateListed2||''}" onchange="updateField(${item.sku},'dateListed2',this.value);this.classList.toggle('has-value',!!this.value)"></td>`;
   html += `<td class="money-cell">$${makeInput(item.sku,'salePrice',item.salePrice||'','number')}</td>`;
   html += `<td>${makeInput(item.sku,'dateSold',item.dateSold,'date')}</td>`;
   html += `<td>${makeSelect(item.sku,'paymentMethod',paymentOptions(),item.paymentMethod)}</td>`;
@@ -469,6 +510,33 @@ function itemRow(item, showAllCols=true) {
   html += `<td><button class="btn btn-danger btn-sm" onclick="deleteItem(${item.sku})">X</button></td>`;
   html += `</tr>`;
   return html;
+}
+
+// ===== STALE LISTINGS FILTER =====
+let _staleFilter = 'all'; // 'all', 'warning' (21+), 'danger' (30+)
+
+function setStaleFilter(val) {
+  _staleFilter = val;
+  document.querySelectorAll('.stale-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.stale === val);
+  });
+  renderOpen();
+}
+
+// Update stale count badges on the filter buttons
+function updateStaleBadges() {
+  const listed = DATA.items.filter(i => i.listingStatus == 2);
+  const warning = listed.filter(i => { const d = getListingAgeDays(i); return d != null && d >= 21; }).length;
+  const danger = listed.filter(i => { const d = getListingAgeDays(i); return d != null && d >= 30; }).length;
+  document.querySelectorAll('.stale-btn').forEach(b => {
+    const badge = b.querySelector('.stale-badge');
+    if (badge) badge.remove();
+    if (b.dataset.stale === 'warning' && warning > 0) {
+      b.innerHTML = `21+ Days<span class="stale-badge">${warning}</span>`;
+    } else if (b.dataset.stale === 'danger' && danger > 0) {
+      b.innerHTML = `30+ Days<span class="stale-badge">${danger}</span>`;
+    }
+  });
 }
 
 // ===== SORTING STATE =====
@@ -495,7 +563,7 @@ const COL_DEFAULT_WIDTHS = {
   sku: 65, lotId: 70, brand: 130, model: 150, category: 110, unitCost: 100,
   powersOn: 120, coreFunction: 120, accessories: 100, missingItems: 130,
   cosmeticGrade: 85, functionalGrade: 90, tier: 80, listedCondition: 120,
-  listingStatus: 110, listingChannel: 95, listPrice: 110, dateListed: 115,
+  listingStatus: 110, listingChannel: 105, listPrice: 110, dateListed: 120,
   salePrice: 110, dateSold: 115, paymentMethod: 110, platformFees: 105,
   shippingCost: 110, otherCosts: 105, netProceeds: 110, grossProfit: 110,
   roi: 70, msrp: 110, notes: 180
@@ -935,13 +1003,33 @@ function renderOpen() {
   const lot = document.getElementById('filterOpenLot').value;
   let items = DATA.items.filter(i => i.listingStatus != 5);
   items = filterItems(items, search, lot);
+
+  // Apply stale listing filter
+  if (_staleFilter === 'warning') {
+    items = items.filter(i => {
+      const d = getListingAgeDays(i);
+      return i.listingStatus == 2 && d != null && d >= 21;
+    });
+  } else if (_staleFilter === 'danger') {
+    items = items.filter(i => {
+      const d = getListingAgeDays(i);
+      return i.listingStatus == 2 && d != null && d >= 30;
+    });
+  }
+
   items = sortItems(items);
   let html = '<table>' + tableHeaders(true);
   items.forEach(i => html += itemRow(i, true));
-  if (!items.length) html += '<tr><td colspan="30" style="text-align:center;padding:24px;color:var(--text-dim)">All items sold! Nice work.</td></tr>';
+  if (!items.length) {
+    const msg = _staleFilter !== 'all'
+      ? 'No stale listings found — looking good!'
+      : 'All items sold! Nice work.';
+    html += `<tr><td colspan="30" style="text-align:center;padding:24px;color:var(--text-dim)">${msg}</td></tr>`;
+  }
   html += '</table>';
   document.getElementById('openTable').innerHTML = html;
   applyColumnWidths('openTable');
+  updateStaleBadges();
 }
 
 function renderSold() {
@@ -1014,11 +1102,12 @@ function exportData() {
 
 function exportCSV() {
   DATA.items.forEach(i => calcItem(i));
-  const headers = ['SKU','Lot','Brand','Model','Category','Unit Cost','Powers On','Core Function','Accessories','Missing Items','Cosmetic Grade','Functional Grade','Tier','Listed Condition','Status','Channel','List Price','Date Listed','Sale Price','Date Sold','Payment Method','Platform Fees','Shipping Cost','Other Costs','Net Proceeds','Gross Profit','ROI%','MSRP','Notes'];
+  const headers = ['SKU','Lot','Brand','Model','Category','Unit Cost','Powers On','Core Function','Accessories','Missing Items','Cosmetic Grade','Functional Grade','Tier','Listed Condition','Status','Channel','List Price','Date Listed','Channel 2','List Price 2','Date Listed 2','Sale Price','Date Sold','Payment Method','Platform Fees','Shipping Cost','Other Costs','Net Proceeds','Gross Profit','ROI%','MSRP','Notes'];
   const rows = DATA.items.map(i => [
     i.sku,i.lotId,i.brand,i.model,i.category,i.unitCost,i.powersOn,i.coreFunction,i.accessories,i.missingItems,
     i.cosmeticGrade,i.functionalGrade,i.tier,i.listedCondition,statusLabel(i.listingStatus),i.listingChannel,
-    i.listPrice,i.dateListed,i.salePrice,i.dateSold,i.paymentMethod,i.platformFees,i.shippingCost,i.otherCosts,
+    i.listPrice,i.dateListed,i.listingChannel2,i.listPrice2,i.dateListed2,
+    i.salePrice,i.dateSold,i.paymentMethod,i.platformFees,i.shippingCost,i.otherCosts,
     i.netProceeds,i.grossProfit,i.roi,i.msrp,i.notes
   ].map(v => `"${(v==null?'':String(v)).replace(/"/g,'""')}"`).join(','));
   const csv = [headers.join(','), ...rows].join('\n');
@@ -1110,6 +1199,7 @@ function updateBadges() {
     if (t.dataset.tab === 'sold') t.innerHTML = `Sold Items <span class="badge">${sold}</span>`;
     if (t.dataset.tab === 'all') t.innerHTML = `All Inventory <span class="badge">${DATA.items.length}</span>`;
   });
+  updateStaleBadges();
 }
 
 init();

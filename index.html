@@ -112,6 +112,11 @@
     <div class="toolbar">
       <input type="search" id="searchOpen" placeholder="Search open inventory..." oninput="renderOpen()">
       <select id="filterOpenLot" onchange="renderOpen()"><option value="">All Lots</option></select>
+      <div class="stale-filter-group">
+        <button class="stale-btn active" data-stale="all" onclick="setStaleFilter('all')">All</button>
+        <button class="stale-btn" data-stale="warning" onclick="setStaleFilter('warning')">21+ Days</button>
+        <button class="stale-btn" data-stale="danger" onclick="setStaleFilter('danger')">30+ Days</button>
+      </div>
     </div>
     <div class="table-wrap" id="openTable"></div>
   </div>
