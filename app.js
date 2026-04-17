@@ -8,8 +8,11 @@ const ITEM_DB_TO_JS = {
   accessories: 'accessories', missing_items: 'missingItems',
   cosmetic_grade: 'cosmeticGrade', functional_grade: 'functionalGrade',
   tier: 'tier', listed_condition: 'listedCondition', listing_status: 'listingStatus',
+  // Legacy single/dual channel columns (read for backward compat, no longer written)
   listing_channel: 'listingChannel', list_price: 'listPrice', date_listed: 'dateListed',
   listing_channel_2: 'listingChannel2', list_price_2: 'listPrice2', date_listed_2: 'dateListed2',
+  // New flexible listings array (JSONB)
+  listings: 'listings',
   sale_price: 'salePrice', sold_platform: 'soldPlatform', date_sold: 'dateSold', payment_method: 'paymentMethod',
   platform_fees: 'platformFees', shipping_cost: 'shippingCost',
   other_costs: 'otherCosts', notes: 'notes'
@@ -50,8 +53,11 @@ async function loadData() {
     DATA.lots = lots.map(r => dbToJs(r, LOT_DB_TO_JS));
     DATA.items = items.map(r => dbToJs(r, ITEM_DB_TO_JS));
     DATA.nextSKU = configRows.length ? parseInt(configRows[0].value) : 1;
-    // Recalculate computed fields
-    DATA.items.forEach(i => calcItem(i));
+    // Construct listings array and recalculate computed fields
+    DATA.items.forEach(i => {
+      buildListings(i);
+      calcItem(i);
+    });
   } catch (err) {
     console.error('Failed to load data from Supabase:', err);
     toast('Error loading data — check console');
@@ -102,35 +108,122 @@ function calcItem(item) {
   return item;
 }
 
-// Helper: after the 2nd-channel select changes, toggle has-value on sibling price/date cells
-function syncDualVisibility(selectEl) {
-  const row = selectEl.closest('tr');
-  if (!row) return;
-  const hasVal = !!selectEl.value;
-  row.querySelectorAll('.dual-money:last-child, .dl2-input').forEach(el => {
-    el.classList.toggle('has-value', hasVal);
-  });
-}
-
 function statusLabel(s) {
   const match = DROPDOWN_OPTIONS.listingStatus.find(o => o.value == s);
   return match ? match.label : 'Unknown';
 }
 
+// ===== LISTINGS ARRAY MANAGEMENT =====
+// Build item.listings from the JSONB column, or fall back to legacy columns
+function buildListings(item) {
+  if (Array.isArray(item.listings) && item.listings.length > 0) {
+    // Already have listings from the new JSONB column — normalise values
+    item.listings = item.listings.map(l => ({
+      channel: l.channel || '',
+      price: Number(l.price) || 0,
+      dateListed: l.dateListed || ''
+    }));
+  } else {
+    // Backward compat: construct from legacy columns
+    item.listings = [];
+    if (item.listingChannel || (Number(item.listPrice) > 0) || item.dateListed) {
+      item.listings.push({ channel: item.listingChannel || '', price: Number(item.listPrice) || 0, dateListed: item.dateListed || '' });
+    }
+    if (item.listingChannel2 || (Number(item.listPrice2) > 0) || item.dateListed2) {
+      item.listings.push({ channel: item.listingChannel2 || '', price: Number(item.listPrice2) || 0, dateListed: item.dateListed2 || '' });
+    }
+  }
+  // Ensure at least one empty row for rendering
+  if (!item.listings.length) {
+    item.listings = [{ channel: '', price: 0, dateListed: '' }];
+  }
+  // Set virtual fields for sorting compatibility
+  _syncVirtualFields(item);
+}
+
+// Keep virtual fields in sync so sorting by Channel / List $ / Listed still works
+function _syncVirtualFields(item) {
+  const first = item.listings[0] || {};
+  item.listingChannel = first.channel || '';
+  item.listPrice = first.price || 0;
+  item.dateListed = first.dateListed || '';
+}
+
+function addListing(sku) {
+  const item = DATA.items.find(i => i.sku === sku);
+  if (!item) return;
+  item.listings.push({ channel: '', price: 0, dateListed: '' });
+  _syncVirtualFields(item);
+  saveListings(sku);
+  renderCurrentView();
+}
+
+function removeListing(sku, index) {
+  const item = DATA.items.find(i => i.sku === sku);
+  if (!item || item.listings.length <= 1 || index === 0) return;
+  item.listings.splice(index, 1);
+  _syncVirtualFields(item);
+  saveListings(sku);
+  renderCurrentView();
+}
+
+function updateListing(sku, index, field, value) {
+  const item = DATA.items.find(i => i.sku === sku);
+  if (!item || !item.listings[index]) return;
+  if (field === 'price') value = Number(value) || 0;
+  item.listings[index][field] = value;
+  _syncVirtualFields(item);
+  saveListings(sku);
+  // Auto-default soldPlatform when only one channel is listed
+  if (field === 'channel') autoDefaultSoldPlatform(sku);
+}
+
+function saveListings(sku) {
+  const item = DATA.items.find(i => i.sku === sku);
+  if (!item) return;
+  const timerKey = `${sku}_listings`;
+  clearTimeout(_updateTimers[timerKey]);
+  _updateTimers[timerKey] = setTimeout(async () => {
+    try {
+      await supabase.update('items', `sku=eq.${sku}`, { listings: item.listings });
+    } catch (err) {
+      console.error(`saveListings(${sku}) error:`, err);
+      toast('Error saving listings — check console');
+    }
+  }, 300);
+}
+
+// Auto-fill soldPlatform when there's exactly one channel listed
+function autoDefaultSoldPlatform(sku) {
+  const item = DATA.items.find(i => i.sku === sku);
+  if (!item || item.soldPlatform) return;
+  const channels = item.listings.map(l => l.channel).filter(Boolean);
+  if (channels.length !== 1) return;
+  item.soldPlatform = channels[0];
+  const row = document.querySelector(`tr[data-sku="${sku}"]`);
+  if (row) {
+    const sp = row.querySelector('select[onchange*="soldPlatform"]');
+    if (sp) sp.value = channels[0];
+  }
+  const timer = `${sku}_soldPlatform`;
+  clearTimeout(_updateTimers[timer]);
+  _updateTimers[timer] = setTimeout(async () => {
+    try { await supabase.update('items', `sku=eq.${sku}`, { sold_platform: channels[0] }); }
+    catch (e) { console.error('Auto-set soldPlatform error:', e); }
+  }, 300);
+}
+
 // ===== LISTING AGE HELPERS =====
 // Returns the number of days since the oldest active listing date.
-// Considers both dateListed and dateListed2, uses the earliest.
 function getListingAgeDays(item) {
-  const dates = [item.dateListed, item.dateListed2].filter(Boolean);
+  const dates = (item.listings || []).map(l => l.dateListed).filter(Boolean);
   if (!dates.length) return null;
   const today = new Date();
-  // Use the earliest (oldest) listing date to catch the stalest listing
   const oldest = dates.sort()[0];
   return Math.floor((today - new Date(oldest + 'T00:00:00')) / 86400000);
 }
 
 // Returns 'danger' (30+), 'warning' (21-29), or '' based on listing age.
-// Only applies to items with listingStatus == 2 (Listed).
 function getAgingClass(item) {
   if (item.listingStatus != 2) return '';
   const days = getListingAgeDays(item);
@@ -353,12 +446,7 @@ async function saveItem() {
       tier: '',
       listedCondition: '',
       listingStatus: 1,
-      listingChannel: '',
-      listPrice: 0,
-      dateListed: null,
-      listingChannel2: '',
-      listPrice2: 0,
-      dateListed2: null,
+      listings: [{ channel: '', price: 0, dateListed: '' }],
       salePrice: 0,
       soldPlatform: '',
       dateSold: null,
@@ -373,6 +461,7 @@ async function saveItem() {
     await supabase.insert('items', dbRow);
 
     // Add to local state
+    buildListings(item);
     calcItem(item);
     DATA.items.push(item);
     DATA.nextSKU = sku + 1;
@@ -407,7 +496,7 @@ const _updateTimers = {};
 function updateField(sku, field, value) {
   const item = DATA.items.find(i => i.sku === sku);
   if (!item) return;
-  if (['listPrice','listPrice2','salePrice','platformFees','shippingCost','otherCosts','msrp','listingStatus'].includes(field)) {
+  if (['salePrice','platformFees','shippingCost','otherCosts','msrp','listingStatus'].includes(field)) {
     item[field] = Number(value) || 0;
     if (field === 'msrp') item[field] = Math.round(item[field]);
   } else {
@@ -415,29 +504,8 @@ function updateField(sku, field, value) {
   }
   calcItem(item);
 
-  // Auto-default soldPlatform when only one channel is listed
-  if ((field === 'listingStatus' || field === 'listingChannel' || field === 'listingChannel2') && !item.soldPlatform) {
-    const ch1 = item.listingChannel || '';
-    const ch2 = item.listingChannel2 || '';
-    const hasOne = (ch1 && !ch2) || (!ch1 && ch2);
-    if (hasOne) {
-      const autoPlatform = ch1 || ch2;
-      item.soldPlatform = autoPlatform;
-      // Update the select in the DOM if the row exists
-      const autoRow = document.querySelector(`tr[data-sku="${sku}"]`);
-      if (autoRow) {
-        const spSelect = autoRow.querySelector('select[onchange*="soldPlatform"]');
-        if (spSelect) spSelect.value = autoPlatform;
-      }
-      // Persist to DB
-      const spTimer = `${sku}_soldPlatform`;
-      clearTimeout(_updateTimers[spTimer]);
-      _updateTimers[spTimer] = setTimeout(async () => {
-        try { await supabase.update('items', `sku=eq.${sku}`, { sold_platform: autoPlatform }); }
-        catch (e) { console.error('Auto-set soldPlatform error:', e); }
-      }, 300);
-    }
-  }
+  // Auto-default soldPlatform when status changes
+  if (field === 'listingStatus') autoDefaultSoldPlatform(sku);
 
   // Update the MSRP input to show the rounded value
   if (field === 'msrp') {
@@ -469,7 +537,7 @@ function updateField(sku, field, value) {
       if (!dbField) return;
       let dbValue = item[field];
       // Convert empty date strings to null for date columns
-      if ((field === 'dateListed' || field === 'dateListed2' || field === 'dateSold') && dbValue === '') dbValue = null;
+      if (field === 'dateSold' && dbValue === '') dbValue = null;
       await supabase.update('items', `sku=eq.${sku}`, { [dbField]: dbValue });
     } catch (err) {
       console.error(`updateField(${sku}, ${field}) error:`, err);
@@ -515,12 +583,27 @@ function itemRow(item, showAllCols=true) {
   </select></td>`;
   html += `<td>${makeSelect(item.sku,'listedCondition',conditionOptions(),item.listedCondition)}</td>`;
   html += `<td>${makeSelect(item.sku,'listingStatus',statusOpts,item.listingStatus)}</td>`;
-  const ch2cls = item.listingChannel2 ? ' has-value' : '';
-  const p2cls = (item.listPrice2 && Number(item.listPrice2) > 0) ? ' has-value' : '';
-  const d2cls = item.dateListed2 ? ' has-value' : '';
-  html += `<td class="dual-cell">${makeSelect(item.sku,'listingChannel',channelOptions(),item.listingChannel)}<select class="ch2-select${ch2cls}" onchange="updateField(${item.sku},'listingChannel2',this.value);this.classList.toggle('has-value',!!this.value);syncDualVisibility(this)">${channelOptions().map(o => `<option value="${o}" ${o==(item.listingChannel2||'')?'selected':''}>${o}</option>`).join('')}</select></td>`;
-  html += `<td class="dual-cell money-cell"><span class="dual-money">$${makeInput(item.sku,'listPrice',item.listPrice||'','number')}</span><span class="dual-money${p2cls}">$${makeInput(item.sku,'listPrice2',item.listPrice2||'','number')}</span></td>`;
-  html += `<td class="dual-cell">${makeInput(item.sku,'dateListed',item.dateListed,'date')}<input class="dl2-input${d2cls}" type="date" value="${item.dateListed2||''}" onchange="updateField(${item.sku},'dateListed2',this.value);this.classList.toggle('has-value',!!this.value)"></td>`;
+  // --- Flexible listings: Channel / List $ / Listed ---
+  const ls = item.listings || [{ channel: '', price: 0, dateListed: '' }];
+  let chHtml = '<td class="listings-cell">';
+  ls.forEach((l, idx) => {
+    const rmBtn = idx > 0 ? ` <button class="listing-rm" onclick="removeListing(${item.sku},${idx})" title="Remove">&times;</button>` : '';
+    chHtml += `<div class="listing-entry"><select onchange="updateListing(${item.sku},${idx},'channel',this.value)">${channelOptions().map(o => `<option value="${o}" ${o==(l.channel||'')?'selected':''}>${o}</option>`).join('')}</select>${rmBtn}</div>`;
+  });
+  chHtml += `<button class="listing-add" onclick="addListing(${item.sku})" title="Add channel">+</button></td>`;
+  html += chHtml;
+  let prHtml = '<td class="listings-cell money-cell">';
+  ls.forEach((l, idx) => {
+    prHtml += `<div class="listing-entry listing-money">$<input type="text" inputmode="decimal" value="${l.price||''}" onchange="updateListing(${item.sku},${idx},'price',this.value)"></div>`;
+  });
+  prHtml += '</td>';
+  html += prHtml;
+  let dtHtml = '<td class="listings-cell">';
+  ls.forEach((l, idx) => {
+    dtHtml += `<div class="listing-entry"><input type="date" value="${l.dateListed||''}" onchange="updateListing(${item.sku},${idx},'dateListed',this.value)"></div>`;
+  });
+  dtHtml += '</td>';
+  html += dtHtml;
   html += `<td class="money-cell">$${makeInput(item.sku,'salePrice',item.salePrice||'','number')}</td>`;
   html += `<td>${makeSelect(item.sku,'soldPlatform',channelOptions(),item.soldPlatform||'')}</td>`;
   html += `<td>${makeInput(item.sku,'dateSold',item.dateSold,'date')}</td>`;
@@ -1128,14 +1211,28 @@ function exportData() {
 
 function exportCSV() {
   DATA.items.forEach(i => calcItem(i));
-  const headers = ['SKU','Lot','Brand','Model','Category','Unit Cost','Powers On','Core Function','Accessories','Missing Items','Cosmetic Grade','Functional Grade','Tier','Listed Condition','Status','Channel','List Price','Date Listed','Channel 2','List Price 2','Date Listed 2','Sale Price','Sold Platform','Date Sold','Payment Method','Platform Fees','Shipping Cost','Other Costs','Net Proceeds','Gross Profit','ROI%','MSRP','Notes'];
-  const rows = DATA.items.map(i => [
-    i.sku,i.lotId,i.brand,i.model,i.category,i.unitCost,i.powersOn,i.coreFunction,i.accessories,i.missingItems,
-    i.cosmeticGrade,i.functionalGrade,i.tier,i.listedCondition,statusLabel(i.listingStatus),i.listingChannel,
-    i.listPrice,i.dateListed,i.listingChannel2,i.listPrice2,i.dateListed2,
-    i.salePrice,i.soldPlatform,i.dateSold,i.paymentMethod,i.platformFees,i.shippingCost,i.otherCosts,
-    i.netProceeds,i.grossProfit,i.roi,i.msrp,i.notes
-  ].map(v => `"${(v==null?'':String(v)).replace(/"/g,'""')}"`).join(','));
+  // Determine max listings across all items for dynamic columns
+  const maxListings = Math.max(1, ...DATA.items.map(i => (i.listings || []).length));
+  const baseHeaders = ['SKU','Lot','Brand','Model','Category','Unit Cost','Powers On','Core Function','Accessories','Missing Items','Cosmetic Grade','Functional Grade','Tier','Listed Condition','Status'];
+  const listingHeaders = [];
+  for (let n = 1; n <= maxListings; n++) {
+    const suffix = maxListings > 1 ? ` ${n}` : '';
+    listingHeaders.push(`Channel${suffix}`, `List Price${suffix}`, `Date Listed${suffix}`);
+  }
+  const tailHeaders = ['Sale Price','Sold Platform','Date Sold','Payment Method','Platform Fees','Shipping Cost','Other Costs','Net Proceeds','Gross Profit','ROI%','MSRP','Notes'];
+  const headers = [...baseHeaders, ...listingHeaders, ...tailHeaders];
+  const rows = DATA.items.map(i => {
+    const base = [i.sku,i.lotId,i.brand,i.model,i.category,i.unitCost,i.powersOn,i.coreFunction,i.accessories,i.missingItems,
+      i.cosmeticGrade,i.functionalGrade,i.tier,i.listedCondition,statusLabel(i.listingStatus)];
+    const listingCols = [];
+    for (let n = 0; n < maxListings; n++) {
+      const l = (i.listings || [])[n] || {};
+      listingCols.push(l.channel || '', l.price || 0, l.dateListed || '');
+    }
+    const tail = [i.salePrice,i.soldPlatform,i.dateSold,i.paymentMethod,i.platformFees,i.shippingCost,i.otherCosts,
+      i.netProceeds,i.grossProfit,i.roi,i.msrp,i.notes];
+    return [...base, ...listingCols, ...tail].map(v => `"${(v==null?'':String(v)).replace(/"/g,'""')}"`).join(',');
+  });
   const csv = [headers.join(','), ...rows].join('\n');
   const blob = new Blob([csv], {type: 'text/csv'});
   const a = document.createElement('a');

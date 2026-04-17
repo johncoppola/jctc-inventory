@@ -159,36 +159,18 @@ tr.age-danger:hover td { background: rgba(248,113,113,.16); }
 tr.age-danger td:first-child { background: rgba(248,113,113,.10); }
 tr.age-danger:hover td:first-child { background: rgba(248,113,113,.16); }
 
-/* Dual-row cells (stacked channel / price / date) */
-td.dual-cell { padding: 4px 6px; }
-td.dual-cell > select,
-td.dual-cell > input,
-td.dual-cell > .dual-money { display: block; width: 100%; margin: 0; }
-/* Top row styling */
-td.dual-cell > select:first-child,
-td.dual-cell > input:first-child,
-td.dual-cell > .dual-money:first-child { border-bottom: 1px dashed var(--border); }
-td.dual-cell > select:first-child,
-td.dual-cell > input:first-child { border-radius: 4px 4px 0 0; }
-/* Bottom row styling */
-td.dual-cell > .ch2-select,
-td.dual-cell > .dl2-input,
-td.dual-cell > .dual-money:last-child { opacity: 0.4; }
-td.dual-cell > .ch2-select { border-radius: 0 0 4px 4px; }
-td.dual-cell > .dl2-input { border-radius: 0 0 4px 4px; }
-/* Hover/focus shows the second row */
-td.dual-cell > .ch2-select:focus,
-td.dual-cell > .ch2-select:hover,
-td.dual-cell > .dl2-input:focus,
-td.dual-cell > .dl2-input:hover,
-td.dual-cell > .dual-money:last-child:hover,
-td.dual-cell > .dual-money:last-child input:focus { opacity: 1; }
-/* When second channel has a value, make it fully visible */
-td.dual-cell > .ch2-select.has-value,
-td.dual-cell > .dl2-input.has-value,
-td.dual-cell > .dual-money.has-value { opacity: 1; }
-.dual-money { display: block; white-space: nowrap; color: var(--text-dim); font-size: 13px; }
-.dual-money input { display: inline; width: calc(100% - 10px); }
+/* Flexible listings cells (channel / price / date) */
+td.listings-cell { padding: 4px 6px; vertical-align: top; }
+.listing-entry { display: flex; align-items: center; gap: 2px; }
+.listing-entry:not(:last-child) { border-bottom: 1px dashed var(--border); }
+.listing-entry select,
+.listing-entry input { flex: 1; min-width: 0; }
+.listing-money { white-space: nowrap; color: var(--text-dim); font-size: 13px; }
+.listing-money input { display: inline; width: calc(100% - 12px); }
+.listing-rm { flex-shrink: 0; background: none; border: none; color: var(--red); cursor: pointer; font-size: 14px; line-height: 1; padding: 2px 4px; border-radius: 4px; opacity: 0.4; transition: opacity .15s; }
+.listing-rm:hover { opacity: 1; background: rgba(248,113,113,.12); }
+.listing-add { display: block; width: 100%; background: none; border: 1px dashed var(--border); color: var(--text-dim); cursor: pointer; font-size: 13px; font-weight: 600; padding: 1px 0; border-radius: 4px; margin-top: 2px; transition: all .15s; }
+.listing-add:hover { border-color: var(--accent); color: var(--accent); background: rgba(79,140,255,.06); }
 
 /* Stale filter button */
 .stale-filter-group { display: flex; gap: 0; margin-left: 8px; }
