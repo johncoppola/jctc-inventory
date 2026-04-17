@@ -89,7 +89,7 @@ function calcItem(item) {
   const fees = Number(item.platformFees) || 0;
   const ship = Number(item.shippingCost) || 0;
   const other = Number(item.otherCosts) || 0;
-  if (item.listingStatus == 5 && sale > 0) {
+  if (sale > 0) {
     item.netProceeds = sale - fees - ship - other;
     item.grossProfit = item.netProceeds - item.unitCost;
     item.roi = item.unitCost > 0 ? item.grossProfit / item.unitCost : 0;
@@ -236,7 +236,7 @@ async function saveItem() {
       category: document.getElementById('itemCategory').value,
       brand: document.getElementById('itemBrand').value,
       model: document.getElementById('itemModel').value,
-      msrp: Number(document.getElementById('itemMSRP').value) || 0,
+      msrp: Math.round(Number(document.getElementById('itemMSRP').value) || 0),
       powersOn: document.getElementById('itemPowers').value,
       coreFunction: document.getElementById('itemFunction').value,
       accessories: document.getElementById('itemAccessories').value,
@@ -303,10 +303,20 @@ function updateField(sku, field, value) {
   if (!item) return;
   if (['listPrice','salePrice','platformFees','shippingCost','otherCosts','msrp','listingStatus'].includes(field)) {
     item[field] = Number(value) || 0;
+    if (field === 'msrp') item[field] = Math.round(item[field]);
   } else {
     item[field] = value;
   }
   calcItem(item);
+
+  // Update the MSRP input to show the rounded value
+  if (field === 'msrp') {
+    const row0 = document.querySelector(`tr[data-sku="${sku}"]`);
+    if (row0) {
+      const msrpInput = row0.querySelector('input[onchange*="msrp"]');
+      if (msrpInput) msrpInput.value = item.msrp;
+    }
+  }
 
   // Update calculated display cells immediately
   const row = document.querySelector(`tr[data-sku="${sku}"]`);
@@ -349,7 +359,10 @@ function makeSelect(sku, field, options, current) {
 
 function makeInput(sku, field, value, type='text') {
   const v = value == null || value === undefined ? '' : value;
-  return `<input type="${type}" value="${v}" onchange="updateField(${sku},'${field}',this.value)" ${type==='number' ? 'step="0.01"' : ''}>`;
+  if (type === 'number') {
+    return `<input type="text" inputmode="decimal" value="${v}" onchange="updateField(${sku},'${field}',this.value)">`;
+  }
+  return `<input type="${type}" value="${v}" onchange="updateField(${sku},'${field}',this.value)">`;
 }
 
 function itemRow(item, showAllCols=true) {
@@ -383,13 +396,13 @@ function itemRow(item, showAllCols=true) {
   html += `<td class="money-cell">$${makeInput(item.sku,'salePrice',item.salePrice||'','number')}</td>`;
   html += `<td>${makeInput(item.sku,'dateSold',item.dateSold,'date')}</td>`;
   html += `<td>${makeSelect(item.sku,'paymentMethod',paymentOptions(),item.paymentMethod)}</td>`;
-  html += `<td class="money-cell">$${makeInput(item.sku,'platformFees',item.platformFees||'','number')}</td>`;
-  html += `<td class="money-cell">$${makeInput(item.sku,'shippingCost',item.shippingCost||'','number')}</td>`;
-  html += `<td class="money-cell">$${makeInput(item.sku,'otherCosts',item.otherCosts||'','number')}</td>`;
+  html += `<td class="money-cell">$${makeInput(item.sku,'platformFees',item.platformFees ?? 0,'number')}</td>`;
+  html += `<td class="money-cell">$${makeInput(item.sku,'shippingCost',item.shippingCost ?? 0,'number')}</td>`;
+  html += `<td class="money-cell">$${makeInput(item.sku,'otherCosts',item.otherCosts ?? 0,'number')}</td>`;
   html += `<td class="calc-cell" data-field="netProceeds">${fmt(item.netProceeds)}</td>`;
   html += `<td class="calc-cell ${item.grossProfit>=0?'positive':'negative'}" data-field="grossProfit">${fmt(item.grossProfit)}</td>`;
   html += `<td class="calc-cell ${item.roi>=0?'positive':'negative'}" data-field="roi">${fmtPct(item.roi)}</td>`;
-  html += `<td class="money-cell">$${makeInput(item.sku,'msrp',item.msrp||'','number')}</td>`;
+  html += `<td class="money-cell">$${makeInput(item.sku,'msrp',item.msrp ? Math.round(item.msrp) : '','number')}</td>`;
   html += `<td>${makeInput(item.sku,'notes',item.notes)}</td>`;
   html += `<td><button class="btn btn-danger btn-sm" onclick="deleteItem(${item.sku})">X</button></td>`;
   html += `</tr>`;
@@ -416,13 +429,25 @@ const HEADER_FIELD_MAP_SHORT = HEADER_FIELD_MAP_ALL.filter(h =>
   !['powersOn','coreFunction','accessories','missingItems','cosmeticGrade','functionalGrade'].includes(h.field)
 );
 
+// Default column widths (px) by field name
+const COL_DEFAULT_WIDTHS = {
+  sku: 65, lotId: 70, brand: 130, model: 150, category: 110, unitCost: 100,
+  powersOn: 120, coreFunction: 120, accessories: 100, missingItems: 130,
+  cosmeticGrade: 85, functionalGrade: 90, tier: 80, listedCondition: 120,
+  listingStatus: 110, listingChannel: 95, listPrice: 110, dateListed: 115,
+  salePrice: 110, dateSold: 115, paymentMethod: 110, platformFees: 105,
+  shippingCost: 110, otherCosts: 105, netProceeds: 110, grossProfit: 110,
+  roi: 70, msrp: 110, notes: 180
+};
+
 function rth(col) {
-  if (!col) return '<th></th>';
+  if (!col) return '<th style="width:45px"></th>';
   const arrow = currentSortField === col.field
     ? (currentSortDir === 'asc' ? '\u25B2' : '\u25BC')
     : '\u25B2';
   const sortedClass = currentSortField === col.field ? ' sorted' : '';
-  return `<th class="${sortedClass}" data-sort-field="${col.field}" onclick="toggleSort('${col.field}')">${col.label}<span class="sort-arrow">${arrow}</span><span class="col-resize"></span></th>`;
+  const defaultW = COL_DEFAULT_WIDTHS[col.field] || 100;
+  return `<th class="${sortedClass}" style="width:${defaultW}px" data-sort-field="${col.field}" onclick="if(!event.target.classList.contains('col-resize'))toggleSort('${col.field}')">${col.label}<span class="sort-arrow">${arrow}</span><span class="col-resize"></span></th>`;
 }
 
 function tableHeaders(showAllCols=true) {
@@ -512,6 +537,7 @@ function renderDashboard() {
   recent.forEach(i => rhtml += itemRow(i, false));
   rhtml += '</table>';
   document.getElementById('recentTable').innerHTML = rhtml;
+  applyColumnWidths('recentTable');
 }
 
 function renderAll() {
@@ -530,6 +556,7 @@ function renderAll() {
   if (!items.length) html += '<tr><td colspan="30" style="text-align:center;padding:24px;color:var(--text-dim)">No items found</td></tr>';
   html += '</table>';
   document.getElementById('allTable').innerHTML = html;
+  applyColumnWidths('allTable');
 }
 
 function renderOpen() {
@@ -544,6 +571,7 @@ function renderOpen() {
   if (!items.length) html += '<tr><td colspan="30" style="text-align:center;padding:24px;color:var(--text-dim)">All items sold! Nice work.</td></tr>';
   html += '</table>';
   document.getElementById('openTable').innerHTML = html;
+  applyColumnWidths('openTable');
 }
 
 function renderSold() {
@@ -562,6 +590,7 @@ function renderSold() {
   if (!items.length) html += '<tr><td colspan="30" style="text-align:center;padding:24px;color:var(--text-dim)">No sold items yet</td></tr>';
   html += '</table>';
   document.getElementById('soldTable').innerHTML = html;
+  applyColumnWidths('soldTable');
 }
 
 function renderLots() {
@@ -706,15 +735,69 @@ function updateBadges() {
 init();
 
 // ===== RESIZABLE COLUMNS =====
+// Persist column widths per table so re-renders preserve them
+const _colWidths = {}; // key: tableWrapperId, value: { colIndex: widthPx }
+
+function _getTableWrapperId(table) {
+  const wrap = table.closest('.table-wrap');
+  return wrap ? wrap.id : null;
+}
+
+// Apply saved widths after a table is rendered
+function applyColumnWidths(tableWrapperId) {
+  const widths = _colWidths[tableWrapperId];
+  if (!widths) return;
+  const wrap = document.getElementById(tableWrapperId);
+  if (!wrap) return;
+  const ths = wrap.querySelectorAll('th');
+  ths.forEach((th, i) => {
+    if (widths[i] != null) th.style.width = widths[i] + 'px';
+  });
+}
+
 document.addEventListener('mousedown', function(e) {
   if (!e.target.classList.contains('col-resize')) return;
   e.preventDefault();
-  const th = e.target.parentElement;
+  e.stopPropagation(); // prevent sort click
+
+  const handle = e.target;
+  const th = handle.parentElement;
   const table = th.closest('table');
-  const startX = e.pageX;
-  const startW = th.offsetWidth;
-  function onMove(ev) { th.style.width = Math.max(40, startW + ev.pageX - startX) + 'px'; }
-  function onUp() { document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp); }
+  const wrapId = _getTableWrapperId(table);
+  const colIndex = Array.from(th.parentElement.children).indexOf(th);
+  const startX = e.clientX;
+  const startW = th.getBoundingClientRect().width;
+
+  handle.classList.add('active');
+  document.body.classList.add('col-resizing');
+
+  function onMove(ev) {
+    ev.preventDefault();
+    const newW = Math.max(40, startW + (ev.clientX - startX));
+    th.style.width = newW + 'px';
+    // Save to persistence map
+    if (wrapId) {
+      if (!_colWidths[wrapId]) _colWidths[wrapId] = {};
+      _colWidths[wrapId][colIndex] = newW;
+    }
+  }
+
+  // Block the click event that fires after mouseup so sorting doesn't trigger
+  function blockClick(ev) {
+    ev.stopPropagation();
+    ev.preventDefault();
+    document.removeEventListener('click', blockClick, true);
+  }
+
+  function onUp() {
+    handle.classList.remove('active');
+    document.body.classList.remove('col-resizing');
+    document.removeEventListener('mousemove', onMove);
+    document.removeEventListener('mouseup', onUp);
+    document.addEventListener('click', blockClick, true);
+    setTimeout(function() { document.removeEventListener('click', blockClick, true); }, 100);
+  }
+
   document.addEventListener('mousemove', onMove);
   document.addEventListener('mouseup', onUp);
 });
