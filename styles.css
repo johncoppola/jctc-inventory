@@ -47,7 +47,7 @@ header h1 span { color: var(--accent); }
 /* Table */
 .table-wrap { overflow: auto; max-height: calc(100vh - 200px); border: 1px solid var(--border); border-radius: 8px; }
 table { width: 100%; border-collapse: collapse; font-size: 13px; table-layout: fixed; }
-th { background: var(--surface2); padding: 10px 12px; text-align: left; font-weight: 600; font-size: 12px; color: var(--text-dim); text-transform: uppercase; letter-spacing: .5px; position: sticky; top: 0; z-index: 2; white-space: nowrap; user-select: none; overflow: hidden; text-overflow: ellipsis; position: relative; }
+th { background: var(--surface2); padding: 10px 12px; text-align: left; font-weight: 600; font-size: 12px; color: var(--text-dim); text-transform: uppercase; letter-spacing: .5px; position: sticky; top: 0; z-index: 2; white-space: nowrap; user-select: none; overflow: hidden; text-overflow: ellipsis; }
 th .col-resize { position: absolute; right: -3px; top: 0; bottom: 0; width: 7px; cursor: col-resize; background: transparent; z-index: 3; }
 th .col-resize:hover { background: var(--accent); width: 3px; right: -1px; }
 th:hover { color: var(--text); cursor: pointer; }
@@ -107,6 +107,16 @@ td select.tier-select-3 { color: var(--red); font-weight: 600; }
 .lot-card h3 { font-size: 15px; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center; }
 .lot-card .lot-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 13px; }
 .lot-card .lot-stat-label { color: var(--text-dim); }
+
+/* Dropdown editor */
+.dropdown-opt-item { display: flex; align-items: center; gap: 8px; padding: 6px 8px; background: var(--surface2); border: 1px solid var(--border); border-radius: 6px; margin-bottom: 4px; cursor: grab; }
+.dropdown-opt-item:active { cursor: grabbing; }
+.dropdown-opt-item .opt-label { flex: 1; font-size: 13px; color: var(--text); }
+.dropdown-opt-item .opt-label.empty-opt { color: var(--text-dim); font-style: italic; }
+.dropdown-opt-item .opt-drag { color: var(--text-dim); font-size: 14px; cursor: grab; user-select: none; }
+.dropdown-opt-item .opt-remove { background: none; border: none; color: var(--red); cursor: pointer; font-size: 14px; padding: 2px 6px; border-radius: 4px; }
+.dropdown-opt-item .opt-remove:hover { background: rgba(248,113,113,.15); }
+.dropdown-opt-item.drag-over { border-color: var(--accent); background: rgba(79,140,255,.1); }
 
 /* Toast notification */
 .toast { position: fixed; bottom: 20px; right: 20px; background: var(--surface2); border: 1px solid var(--green); color: var(--green); padding: 12px 20px; border-radius: 8px; font-size: 13px; z-index: 200; transform: translateY(100px); opacity: 0; transition: all .3s; }

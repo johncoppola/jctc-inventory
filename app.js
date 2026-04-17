@@ -106,14 +106,80 @@ function statusLabel(s) {
   return labels[s] || 'Unknown';
 }
 
-function conditionOptions() {
-  return ['','OB/LN','New - Open Box','Used - Like New','Used - Good','Used - Fair','Salvage/Parts'];
+// ===== CUSTOMIZABLE DROPDOWN OPTIONS =====
+// Central store for all dropdown options — editable via right-click on column headers
+const DROPDOWN_OPTIONS = {
+  category:        ['Electronics','Home & Kitchen','Tools','Toys','Clothing','Other'],
+  powersOn:        ['','Not Tested (Sealed)','Yes','No'],
+  coreFunction:    ['','Not Tested (Sealed)','Yes','No'],
+  accessories:     ['','Yes','No','Partial'],
+  cosmeticGrade:   ['','A','B','C'],
+  functionalGrade: ['','A (Sealed)','A','B','C'],
+  tier:            ['','Tier 1','Tier 2','Tier 3'],
+  listedCondition: ['','OB/LN','New - Open Box','Used - Like New','Used - Good','Used - Fair','Salvage/Parts'],
+  listingStatus:   [{value:1,label:'Not Listed'},{value:2,label:'Listed'},{value:3,label:'Pending Sale'},{value:4,label:'Shipped'},{value:5,label:'Sold'}],
+  listingChannel:  ['','FBM','FBA','eBay','Mercari','OfferUp','Facebook','Craigslist','Direct','Other'],
+  paymentMethod:   ['','Cash','Venmo','CashApp','Zelle','PayPal','Credit Card','Cash & Venmo','Other']
+};
+
+// Which dropdown fields are editable via right-click (exclude listingStatus — it has special value/label pairs)
+const EDITABLE_DROPDOWNS = ['category','powersOn','coreFunction','accessories','cosmeticGrade','functionalGrade','tier','listedCondition','listingChannel','paymentMethod'];
+
+// Friendly labels for the editor modal
+const DROPDOWN_LABELS = {
+  category: 'Category', powersOn: 'Powers On', coreFunction: 'Core Function',
+  accessories: 'Accessories', cosmeticGrade: 'Cosmetic Grade', functionalGrade: 'Functional Grade',
+  tier: 'Tier', listedCondition: 'Listed Condition', listingChannel: 'Listing Channel',
+  paymentMethod: 'Payment Method'
+};
+
+// Map header field names to their dropdown key
+const HEADER_TO_DROPDOWN = {
+  category: 'category', powersOn: 'powersOn', coreFunction: 'coreFunction',
+  accessories: 'accessories', cosmeticGrade: 'cosmeticGrade', functionalGrade: 'functionalGrade',
+  tier: 'tier', listedCondition: 'listedCondition', listingStatus: 'listingStatus',
+  listingChannel: 'listingChannel', paymentMethod: 'paymentMethod'
+};
+
+function conditionOptions() { return DROPDOWN_OPTIONS.listedCondition; }
+function channelOptions() { return DROPDOWN_OPTIONS.listingChannel; }
+function paymentOptions() { return DROPDOWN_OPTIONS.paymentMethod; }
+
+// Load custom dropdown overrides from Supabase
+async function loadDropdownOptions() {
+  try {
+    const rows = await supabase.select('app_config', 'key=eq.dropdown_options');
+    if (rows.length && rows[0].value) {
+      const saved = JSON.parse(rows[0].value);
+      for (const [key, opts] of Object.entries(saved)) {
+        if (DROPDOWN_OPTIONS[key] && key !== 'listingStatus') {
+          DROPDOWN_OPTIONS[key] = opts;
+        }
+      }
+    }
+  } catch (err) {
+    console.error('Failed to load dropdown options:', err);
+  }
 }
-function channelOptions() {
-  return ['','FBM','FBA','eBay','Mercari','OfferUp','Facebook','Craigslist','Direct','Other'];
-}
-function paymentOptions() {
-  return ['','Cash','Venmo','CashApp','Zelle','PayPal','Credit Card','Cash & Venmo','Other'];
+
+// Save dropdown options to Supabase
+async function saveDropdownOptions() {
+  try {
+    // Only save editable dropdowns (not listingStatus)
+    const toSave = {};
+    for (const key of EDITABLE_DROPDOWNS) {
+      toSave[key] = DROPDOWN_OPTIONS[key];
+    }
+    const rows = await supabase.select('app_config', 'key=eq.dropdown_options');
+    if (rows.length) {
+      await supabase.update('app_config', 'key=eq.dropdown_options', { value: JSON.stringify(toSave) });
+    } else {
+      await supabase.insert('app_config', { key: 'dropdown_options', value: JSON.stringify(toSave) });
+    }
+  } catch (err) {
+    console.error('Failed to save dropdown options:', err);
+    toast('Error saving dropdown options');
+  }
 }
 
 // ===== TABS =====
@@ -210,18 +276,25 @@ async function saveLot() {
 }
 
 // ===== ITEM MANAGEMENT =====
+function populateModalSelect(id, options, defaultVal) {
+  const sel = document.getElementById(id);
+  const filteredOpts = options.filter(o => o !== ''); // skip blank for modal
+  sel.innerHTML = filteredOpts.map(o => `<option${o===defaultVal?' selected':''}>${o}</option>`).join('');
+  if (defaultVal && filteredOpts.includes(defaultVal)) sel.value = defaultVal;
+}
+
 function showItemModal() {
   if (!DATA.lots.length) { alert('Add a lot first before adding items.'); return; }
   const sel = document.getElementById('itemLot');
   sel.innerHTML = DATA.lots.map(l => `<option value="${l.id}">Lot ${l.id}</option>`).join('');
   ['itemBrand','itemModel','itemMissing','itemNotes'].forEach(id => document.getElementById(id).value = '');
   document.getElementById('itemMSRP').value = '';
-  document.getElementById('itemPowers').value = 'Not Tested (Sealed)';
-  document.getElementById('itemFunction').value = 'Not Tested (Sealed)';
-  document.getElementById('itemAccessories').value = 'Yes';
-  document.getElementById('itemCosmetic').value = 'A';
-  document.getElementById('itemFunctional').value = 'A (Sealed)';
-  document.getElementById('itemCategory').value = 'Electronics';
+  populateModalSelect('itemCategory', DROPDOWN_OPTIONS.category, DROPDOWN_OPTIONS.category[0]);
+  populateModalSelect('itemPowers', DROPDOWN_OPTIONS.powersOn, 'Not Tested (Sealed)');
+  populateModalSelect('itemFunction', DROPDOWN_OPTIONS.coreFunction, 'Not Tested (Sealed)');
+  populateModalSelect('itemAccessories', DROPDOWN_OPTIONS.accessories, 'Yes');
+  populateModalSelect('itemCosmetic', DROPDOWN_OPTIONS.cosmeticGrade, 'A');
+  populateModalSelect('itemFunctional', DROPDOWN_OPTIONS.functionalGrade, 'A (Sealed)');
   document.getElementById('itemModal').classList.add('show');
 }
 
@@ -366,27 +439,25 @@ function makeInput(sku, field, value, type='text') {
 }
 
 function itemRow(item, showAllCols=true) {
-  const statusOpts = [{value:1,label:'Not Listed'},{value:2,label:'Listed'},{value:3,label:'Pending Sale'},{value:4,label:'Shipped'},{value:5,label:'Sold'}];
+  const statusOpts = DROPDOWN_OPTIONS.listingStatus;
   let html = `<tr data-sku="${item.sku}">`;
   html += `<td>${item.sku}</td>`;
   html += `<td>Lot ${item.lotId}</td>`;
   html += `<td>${makeInput(item.sku,'brand',item.brand)}</td>`;
   html += `<td>${makeInput(item.sku,'model',item.model)}</td>`;
-  html += `<td>${makeInput(item.sku,'category',item.category)}</td>`;
+  html += `<td>${makeSelect(item.sku,'category',DROPDOWN_OPTIONS.category,item.category)}</td>`;
   html += `<td class="calc-cell" data-field="unitCost">${fmt(item.unitCost)}</td>`;
   if (showAllCols) {
-    html += `<td>${makeSelect(item.sku,'powersOn',['Not Tested (Sealed)','Yes','No'],item.powersOn)}</td>`;
-    html += `<td>${makeSelect(item.sku,'coreFunction',['Not Tested (Sealed)','Yes','No'],item.coreFunction)}</td>`;
-    html += `<td>${makeSelect(item.sku,'accessories',['Yes','No','Partial'],item.accessories)}</td>`;
+    html += `<td>${makeSelect(item.sku,'powersOn',DROPDOWN_OPTIONS.powersOn,item.powersOn)}</td>`;
+    html += `<td>${makeSelect(item.sku,'coreFunction',DROPDOWN_OPTIONS.coreFunction,item.coreFunction)}</td>`;
+    html += `<td>${makeSelect(item.sku,'accessories',DROPDOWN_OPTIONS.accessories,item.accessories)}</td>`;
     html += `<td>${makeInput(item.sku,'missingItems',item.missingItems)}</td>`;
-    html += `<td>${makeSelect(item.sku,'cosmeticGrade',['A','B','C'],item.cosmeticGrade)}</td>`;
-    html += `<td>${makeSelect(item.sku,'functionalGrade',['A (Sealed)','A','B','C'],item.functionalGrade)}</td>`;
+    html += `<td>${makeSelect(item.sku,'cosmeticGrade',DROPDOWN_OPTIONS.cosmeticGrade,item.cosmeticGrade)}</td>`;
+    html += `<td>${makeSelect(item.sku,'functionalGrade',DROPDOWN_OPTIONS.functionalGrade,item.functionalGrade)}</td>`;
   }
   const tierClass = item.tier==='Tier 1'?'tier-select-1':item.tier==='Tier 2'?'tier-select-2':'tier-select-3';
   html += `<td><select class="${tierClass}" onchange="updateField(${item.sku},'tier',this.value);this.className='tier-select-'+(this.value==='Tier 1'?'1':this.value==='Tier 2'?'2':'3')">
-    <option value="Tier 1" ${item.tier==='Tier 1'?'selected':''}>Tier 1</option>
-    <option value="Tier 2" ${item.tier==='Tier 2'?'selected':''}>Tier 2</option>
-    <option value="Tier 3" ${item.tier==='Tier 3'?'selected':''}>Tier 3</option>
+    ${DROPDOWN_OPTIONS.tier.map(t => `<option value="${t}" ${t===item.tier?'selected':''}>${t}</option>`).join('')}
   </select></td>`;
   html += `<td>${makeSelect(item.sku,'listedCondition',conditionOptions(),item.listedCondition)}</td>`;
   html += `<td>${makeSelect(item.sku,'listingStatus',statusOpts,item.listingStatus)}</td>`;
@@ -716,10 +787,20 @@ async function init() {
   // Show loading state
   document.getElementById('dashboardStats').innerHTML = '<div class="stat-card"><div class="label">Loading...</div><div class="value">Connecting to database</div></div>';
 
+  await loadDropdownOptions();
   await loadData();
   updateLotFilters();
+  updateCategorySelect();
   renderDashboard();
   updateBadges();
+}
+
+// Update the category dropdown in the Add Item modal to use dynamic options
+function updateCategorySelect() {
+  const sel = document.getElementById('itemCategory');
+  if (!sel) return;
+  const current = sel.value;
+  sel.innerHTML = DROPDOWN_OPTIONS.category.map(c => `<option${c===current?' selected':''}>${c}</option>`).join('');
 }
 
 function updateBadges() {
@@ -801,3 +882,105 @@ document.addEventListener('mousedown', function(e) {
   document.addEventListener('mousemove', onMove);
   document.addEventListener('mouseup', onUp);
 });
+
+// ===== DROPDOWN EDITOR (right-click on column headers) =====
+let _editingDropdownField = null;
+let _editingDropdownOptions = [];
+
+// Right-click on any table header to edit its dropdown options
+document.addEventListener('contextmenu', function(e) {
+  const th = e.target.closest('th[data-sort-field]');
+  if (!th) return;
+  const field = th.dataset.sortField;
+  if (!EDITABLE_DROPDOWNS.includes(field)) return;
+
+  e.preventDefault();
+  openDropdownEditor(field);
+});
+
+function openDropdownEditor(field) {
+  _editingDropdownField = field;
+  _editingDropdownOptions = [...DROPDOWN_OPTIONS[field]];
+  document.getElementById('dropdownModalTitle').textContent = 'Edit ' + DROPDOWN_LABELS[field] + ' Options';
+  document.getElementById('dropdownNewOption').value = '';
+  renderDropdownEditorList();
+  document.getElementById('dropdownModal').classList.add('show');
+}
+
+function closeDropdownModal() {
+  document.getElementById('dropdownModal').classList.remove('show');
+  _editingDropdownField = null;
+  _editingDropdownOptions = [];
+}
+
+function renderDropdownEditorList() {
+  const container = document.getElementById('dropdownOptionsList');
+  container.innerHTML = _editingDropdownOptions.map((opt, i) => {
+    const isBlank = opt === '';
+    const label = isBlank ? '(blank)' : opt;
+    const labelClass = isBlank ? 'opt-label empty-opt' : 'opt-label';
+    return `<div class="dropdown-opt-item" draggable="true" data-idx="${i}"
+      ondragstart="ddDragStart(event)" ondragover="ddDragOver(event)" ondragleave="ddDragLeave(event)" ondrop="ddDrop(event)">
+      <span class="opt-drag">⠿</span>
+      <span class="${labelClass}">${label}</span>
+      <button class="opt-remove" onclick="removeDropdownOption(${i})" title="Remove">&times;</button>
+    </div>`;
+  }).join('');
+}
+
+function addDropdownOption() {
+  const input = document.getElementById('dropdownNewOption');
+  const val = input.value.trim();
+  if (!val) return;
+  if (_editingDropdownOptions.includes(val)) { toast('Option already exists'); return; }
+  _editingDropdownOptions.push(val);
+  input.value = '';
+  renderDropdownEditorList();
+}
+
+// Allow Enter key to add option
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'Enter' && document.activeElement && document.activeElement.id === 'dropdownNewOption') {
+    e.preventDefault();
+    addDropdownOption();
+  }
+});
+
+function removeDropdownOption(idx) {
+  _editingDropdownOptions.splice(idx, 1);
+  renderDropdownEditorList();
+}
+
+// Drag-and-drop reordering
+let _ddDragIdx = null;
+function ddDragStart(e) {
+  _ddDragIdx = Number(e.currentTarget.dataset.idx);
+  e.dataTransfer.effectAllowed = 'move';
+}
+function ddDragOver(e) {
+  e.preventDefault();
+  e.currentTarget.classList.add('drag-over');
+}
+function ddDragLeave(e) {
+  e.currentTarget.classList.remove('drag-over');
+}
+function ddDrop(e) {
+  e.preventDefault();
+  e.currentTarget.classList.remove('drag-over');
+  const targetIdx = Number(e.currentTarget.dataset.idx);
+  if (_ddDragIdx == null || _ddDragIdx === targetIdx) return;
+  const item = _editingDropdownOptions.splice(_ddDragIdx, 1)[0];
+  _editingDropdownOptions.splice(targetIdx, 0, item);
+  _ddDragIdx = null;
+  renderDropdownEditorList();
+}
+
+async function saveDropdownChanges() {
+  if (!_editingDropdownField) return;
+  DROPDOWN_OPTIONS[_editingDropdownField] = [..._editingDropdownOptions];
+  await saveDropdownOptions();
+  closeDropdownModal();
+  updateCategorySelect();
+  renderCurrentView();
+  toast(DROPDOWN_LABELS[_editingDropdownField] + ' options updated!');
+}
