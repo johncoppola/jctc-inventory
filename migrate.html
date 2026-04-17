@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>JCTC Data Migration → Supabase</title>
+<style>
+  body { font-family: system-ui; max-width: 700px; margin: 40px auto; padding: 0 20px; background: #1a1a2e; color: #e0e0e0; }
+  h1 { color: #4fc3f7; }
+  #log { background: #0d0d1a; padding: 16px; border-radius: 8px; font-family: monospace; font-size: 13px; white-space: pre-wrap; max-height: 500px; overflow-y: auto; }
+  .ok { color: #66bb6a; }
+  .err { color: #ef5350; }
+  .info { color: #ffb74d; }
+  button { background: #4fc3f7; color: #000; border: none; padding: 12px 24px; border-radius: 6px; font-size: 16px; cursor: pointer; margin-top: 16px; }
+  button:disabled { opacity: 0.5; cursor: default; }
+</style>
+</head>
+<body>
+<h1>JCTC → Supabase Migration</h1>
+<p>This will insert all 3 lots and 204 items into your Supabase database. Run once only.</p>
+<button id="runBtn" onclick="runMigration()">Run Migration</button>
+<div id="log"></div>
+
+<script src="supabase.js"></script>
+<script>
+const log = document.getElementById('log');
+function info(msg) { log.innerHTML += `<span class="info">${msg}</span>\n`; log.scrollTop = log.scrollHeight; }
+function ok(msg) { log.innerHTML += `<span class="ok">✓ ${msg}</span>\n`; log.scrollTop = log.scrollHeight; }
+function err(msg) { log.innerHTML += `<span class="err">✗ ${msg}</span>\n`; log.scrollTop = log.scrollHeight; }
+
+async function runMigration() {
+  document.getElementById('runBtn').disabled = true;
+
+  // Check if data already exists
+  info('Checking if database already has data...');
+  try {
+    const existing = await supabase.select('lots', 'select=id');
+    if (existing.length > 0) {
+      err(`Database already has ${existing.length} lot(s). Aborting to prevent duplicates.`);
+      err('If you need to re-run, delete all rows from the Supabase dashboard first.');
+      return;
+    }
+  } catch (e) {
+    err('Could not connect to Supabase: ' + e.message);
+    err('Make sure you ran schema.sql in the SQL Editor first!');
+    return;
+  }
+
+  // ===== LOT 1: Electronics =====
+  info('Inserting Lot 1 (32 Electronics items)...');
+  try {
+    await supabase.insert('lots', {
+      id: 1, date: '2026-01-07', auction_price: 1920.61, shipping_fees: 313.03,
+      other_costs: 0, total_units: 32, notes: ''
+    });
+    ok('Lot 1 created');
+  } catch (e) { err('Lot 1 failed: ' + e.message); return; }
+
+  const lot1Items = [
+    {sku:1,brand:'Onkyo',model:'TX-NR6050 7.2 CH',cat:'Electronics',pow:'Not Tested (Sealed)',fn:'Not Tested (Sealed)',acc:'Yes',miss:'',cos:'A',func:'A (Sealed)',cond:'OB/LN',status:5,ch:'FBM',lp:375,dl:'2026-01-15',sp:330,ds:'2026-01-29',pay:'Venmo',fees:6.36,ship:0,oth:0,msrp:500,notes:''},
+    {sku:2,brand:'KEF',model:'LSX II LT BOOKSHELF',cat:'Electronics',pow:'Yes',fn:'Yes',acc:'Yes',miss:'',cos:'B',func:'A',cond:'Used - Good',status:5,ch:'FBM',lp:325,dl:'2026-02-02',sp:325,ds:'2026-03-12',pay:'Venmo',fees:6.27,ship:0,oth:0,msrp:600,notes:''},
+    {sku:3,brand:'Sony',model:'HT-A5000 5.1.2CH',cat:'Electronics',pow:'Not Tested (Sealed)',fn:'Not Tested (Sealed)',acc:'Yes',miss:'',cos:'A',func:'A (Sealed)',cond:'OB/LN',status:5,ch:'eBay',lp:250,dl:'2026-01-24',sp:225,ds:'2026-01-31',pay:'Credit Card',fees:35.7,ship:20.84,oth:0,msrp:650,notes:''},
+    {sku:4,brand:'Soundcore',model:'BOOM V2 BT',cat:'Electronics',pow:'Yes',fn:'Yes',acc:'Yes',miss:'',cos:'A',func:'A',cond:'OB/LN',status:5,ch:'FBM',lp:60,dl:'2026-01-24',sp:55,ds:'2026-02-05',pay:'Cash',fees:0,ship:0,oth:0,msrp:100,notes:''},
+    {sku:5,brand:'Soundcore',model:'BOOM V2 BT',cat:'Electronics',pow:'Yes',fn:'Yes',acc:'Yes',miss:'',cos:'A',func:'A',cond:'OB/LN',status:5,ch:'FBM',lp:65,dl:'2026-01-24',sp:65,ds:'2026-01-27',pay:'Cash',fees:0,ship:0,oth:0,msrp:100,notes:''},
+    {sku:6,brand:'Soundcore',model:'BOOM V2 BT',cat:'Electronics',pow:'Yes',fn:'Yes',acc:'Yes',miss:'',cos:'A',func:'A',cond:'OB/LN',status:5,ch:'FBM',lp:65,dl:'2026-01-24',sp:55,ds:'2026-01-29',pay:'CashApp',fees:0,ship:0,oth:0,msrp:100,notes:''},
+    {sku:7,brand:'Soundcore',model:'BOOM V2 BT',cat:'Electronics',pow:'Yes',fn:'Yes',acc:'Yes',miss:'',cos:'A',func:'A',cond:'OB/LN',status:5,ch:'FBM',lp:65,dl:'2026-01-24',sp:55,ds:'2026-01-29',pay:'CashApp',fees:0,ship:0,oth:0,msrp:100,notes:''},
+    {sku:8,brand:'Soundcore',model:'BOOM V2 BT',cat:'Electronics',pow:'Yes',fn:'Yes',acc:'Yes',miss:'',cos:'A',func:'A',cond:'OB/LN',status:5,ch:'FBM',lp:60,dl:'2026-01-24',sp:55,ds:'2026-02-05',pay:'Cash',fees:0,ship:0,oth:0,msrp:100,notes:''},
+    {sku:9,brand:'Soundcore',model:'BOOM V2 BT',cat:'Electronics',pow:'Yes',fn:'Yes',acc:'Yes',miss:'',cos:'A',func:'A',cond:'OB/LN',status:5,ch:'FBM',lp:60,dl:'2026-01-24',sp:55,ds:'2026-02-05',pay:'Cash',fees:0,ship:0,oth:0,msrp:100,notes:''},
+    {sku:10,brand:'Marshall',model:'KILBURN II BT',cat:'Electronics',pow:'Yes',fn:'Yes',acc:'Yes',miss:'',cos:'A',func:'A',cond:'OB/LN',status:5,ch:'FBM',lp:160,dl:'2026-01-17',sp:130,ds:'2026-01-19',pay:'Venmo',fees:2.52,ship:0,oth:0,msrp:200,notes:''},
+    {sku:11,brand:'Marshall',model:'KILBURN II BT',cat:'Electronics',pow:'Not Tested (Sealed)',fn:'Not Tested (Sealed)',acc:'Yes',miss:'',cos:'A',func:'A (Sealed)',cond:'OB/LN',status:5,ch:'FBM',lp:160,dl:'2026-01-17',sp:130,ds:'2026-01-19',pay:'Venmo',fees:2.52,ship:0,oth:0,msrp:200,notes:''},
+    {sku:12,brand:'Samsung',model:'HW-B73CD',cat:'Electronics',pow:'Not Tested (Sealed)',fn:'Not Tested (Sealed)',acc:'Yes',miss:'',cos:'A',func:'A (Sealed)',cond:'OB/LN',status:5,ch:'FBM',lp:150,dl:'2026-01-24',sp:150,ds:'2026-01-26',pay:'Cash',fees:0,ship:0,oth:0,msrp:300,notes:''},
+    {sku:13,brand:'Samsung',model:'HW-B73CD',cat:'Electronics',pow:'Not Tested (Sealed)',fn:'Not Tested (Sealed)',acc:'Yes',miss:'',cos:'A',func:'A (Sealed)',cond:'OB/LN',status:5,ch:'FBM',lp:125,dl:'2026-01-30',sp:89,ds:'2026-02-04',pay:'Cash',fees:0,ship:0,oth:0,msrp:300,notes:''},
+    {sku:14,brand:'Samsung',model:'HW-B73CD',cat:'Electronics',pow:'Not Tested (Sealed)',fn:'Not Tested (Sealed)',acc:'Yes',miss:'',cos:'A',func:'A (Sealed)',cond:'OB/LN',status:5,ch:'FBM',lp:125,dl:'2026-01-30',sp:110,ds:'2026-02-07',pay:'Cash',fees:0,ship:0,oth:0,msrp:300,notes:''},
+    {sku:15,brand:'Samsung',model:'HW-B73CD',cat:'Electronics',pow:'Not Tested (Sealed)',fn:'Not Tested (Sealed)',acc:'Yes',miss:'',cos:'A',func:'A (Sealed)',cond:'OB/LN',status:5,ch:'FBM',lp:125,dl:'2026-01-30',sp:110,ds:'2026-03-03',pay:'Venmo',fees:2.14,ship:0,oth:0,msrp:300,notes:''},
+    {sku:16,brand:'Samsung',model:'HW-B73CD',cat:'Electronics',pow:'Not Tested (Sealed)',fn:'Not Tested (Sealed)',acc:'Yes',miss:'',cos:'A',func:'A (Sealed)',cond:'OB/LN',status:5,ch:'FBM',lp:125,dl:'2026-01-30',sp:110,ds:'2026-03-03',pay:'Venmo',fees:2.14,ship:0,oth:0,msrp:300,notes:''},
+    {sku:17,brand:'Samsung',model:'HW-B73CD',cat:'Electronics',pow:'Not Tested (Sealed)',fn:'Not Tested (Sealed)',acc:'Yes',miss:'',cos:'A',func:'A (Sealed)',cond:'OB/LN',status:5,ch:'FBM',lp:125,dl:'2026-01-30',sp:100,ds:'2026-02-05',pay:'Cash',fees:0,ship:0,oth:0,msrp:300,notes:'Kept for apartment'},
+    {sku:18,brand:'Samsung',model:'HW-B73CD',cat:'Electronics',pow:'Not Tested (Sealed)',fn:'Not Tested (Sealed)',acc:'Yes',miss:'',cos:'A',func:'A (Sealed)',cond:'OB/LN',status:5,ch:'FBM',lp:125,dl:'2026-01-30',sp:100,ds:'2026-02-05',pay:'Cash',fees:0,ship:0,oth:0,msrp:300,notes:'Kept for apartment'},
+    {sku:19,brand:'Samsung',model:'HW-Q60CF',cat:'Electronics',pow:'Not Tested (Sealed)',fn:'Not Tested (Sealed)',acc:'Yes',miss:'',cos:'A',func:'A (Sealed)',cond:'OB/LN',status:5,ch:'FBM',lp:185,dl:'2026-01-24',sp:175,ds:'2026-02-05',pay:'Cash & Venmo',fees:1.52,ship:0,oth:0,msrp:500,notes:''},
+    {sku:20,brand:'Samsung',model:'HW-Q60CF',cat:'Electronics',pow:'Not Tested (Sealed)',fn:'Not Tested (Sealed)',acc:'Yes',miss:'',cos:'A',func:'A (Sealed)',cond:'OB/LN',status:5,ch:'FBM',lp:185,dl:'2026-01-29',sp:185,ds:'2026-02-07',pay:'Cash',fees:0,ship:0,oth:0,msrp:500,notes:''},
+    {sku:21,brand:'Samsung',model:'HW-Q60CF',cat:'Electronics',pow:'Not Tested (Sealed)',fn:'Not Tested (Sealed)',acc:'Yes',miss:'',cos:'A',func:'A (Sealed)',cond:'OB/LN',status:5,ch:'FBM',lp:185,dl:'2026-01-29',sp:175,ds:'2026-03-06',pay:'Cash',fees:0,ship:0,oth:0,msrp:500,notes:''},
+    {sku:22,brand:'LG',model:'SN7R 5.1.2 CH SOUNDBAR',cat:'Electronics',pow:'Yes',fn:'Yes',acc:'Yes',miss:'Box',cos:'B',func:'C',cond:'Used - Fair',status:5,ch:'FBM',lp:65,dl:'2026-01-17',sp:65,ds:'2026-02-04',pay:'Venmo',fees:1.33,ship:0,oth:0,msrp:400,notes:'Subwoofer not working'},
+    {sku:23,brand:'Klipsch',model:'R-120SWI',cat:'Electronics',pow:'Not Tested (Sealed)',fn:'Not Tested (Sealed)',acc:'Yes',miss:'',cos:'A',func:'A (Sealed)',cond:'OB/LN',status:5,ch:'FBM',lp:175,dl:'2026-01-30',sp:160,ds:'2026-02-01',pay:'Cash',fees:0,ship:0,oth:0,msrp:300,notes:''},
+    {sku:24,brand:'Klipsch',model:'R-60 BOOKSHELF',cat:'Electronics',pow:'Not Tested (Sealed)',fn:'Not Tested (Sealed)',acc:'Yes',miss:'',cos:'A',func:'A (Sealed)',cond:'OB/LN',status:5,ch:'FBM',lp:275,dl:'2026-01-30',sp:220,ds:'2026-03-08',pay:'Cash',fees:0,ship:0,oth:0,msrp:400,notes:''},
+    {sku:25,brand:'Klipsch',model:'R-60 BOOKSHELF',cat:'Electronics',pow:'Not Tested (Sealed)',fn:'Not Tested (Sealed)',acc:'Yes',miss:'',cos:'A',func:'A (Sealed)',cond:'OB/LN',status:5,ch:'FBM',lp:275,dl:'2026-01-30',sp:235,ds:'2026-02-05',pay:'Venmo',fees:4.56,ship:0,oth:0,msrp:400,notes:''},
+    {sku:26,brand:'Klipsch',model:'R-60 BOOKSHELF',cat:'Electronics',pow:'Not Tested (Sealed)',fn:'Not Tested (Sealed)',acc:'Yes',miss:'',cos:'A',func:'A (Sealed)',cond:'OB/LN',status:5,ch:'FBM',lp:275,dl:'2026-01-30',sp:220,ds:'2026-03-08',pay:'Cash',fees:0,ship:0,oth:0,msrp:400,notes:''},
+    {sku:27,brand:'Yamaha',model:'ATS-1090 SOUNDBAR',cat:'Electronics',pow:'No',fn:'No',acc:'Yes',miss:'',cos:'B',func:'C',cond:'Salvage/Parts',status:5,ch:'FBM',lp:15,dl:'2026-01-30',sp:10,ds:'2026-02-12',pay:'Cash',fees:0,ship:0,oth:0,msrp:150,notes:'Broken'},
+    {sku:28,brand:'Sony',model:'HT-SC40 SOUNDBAR',cat:'Electronics',pow:'Yes',fn:'No',acc:'Yes',miss:'Box',cos:'B',func:'C',cond:'Salvage/Parts',status:5,ch:'FBM',lp:25,dl:'2026-01-24',sp:20,ds:'2026-02-01',pay:'Cash',fees:0,ship:0,oth:0,msrp:160,notes:"Turns on, but doesn't work"},
+    {sku:29,brand:'Sony',model:'HT-SC40 SOUNDBAR',cat:'Electronics',pow:'Yes',fn:'Yes',acc:'Yes',miss:'',cos:'A',func:'A',cond:'OB/LN',status:5,ch:'FBM',lp:100,dl:'2026-01-29',sp:90,ds:'2026-01-31',pay:'Cash',fees:0,ship:0,oth:0,msrp:160,notes:''},
+    {sku:30,brand:'Sony',model:'HT-SC40 SOUNDBAR',cat:'Electronics',pow:'Yes',fn:'Yes',acc:'Yes',miss:'',cos:'A',func:'A',cond:'OB/LN',status:5,ch:'FBM',lp:100,dl:'2026-01-29',sp:100,ds:'2026-01-31',pay:'Cash',fees:0,ship:0,oth:0,msrp:160,notes:''},
+    {sku:31,brand:'Hisense',model:'AX700',cat:'Electronics',pow:'Yes',fn:'Yes',acc:'Yes',miss:'Box',cos:'B',func:'A',cond:'Used - Good',status:5,ch:'FBM',lp:150,dl:'2026-01-24',sp:125,ds:'2026-02-01',pay:'CashApp',fees:3.4,ship:0,oth:0,msrp:250,notes:''},
+    {sku:32,brand:'Hisense',model:'AX700',cat:'Electronics',pow:'Not Tested (Sealed)',fn:'Not Tested (Sealed)',acc:'Yes',miss:'',cos:'A',func:'A (Sealed)',cond:'OB/LN',status:5,ch:'FBM',lp:110,dl:'2026-01-29',sp:100,ds:'2026-03-09',pay:'Venmo',fees:2,ship:0,oth:0,msrp:250,notes:''},
+  ];
+
+  try {
+    const dbItems1 = lot1Items.map(d => ({
+      sku: d.sku, lot_id: 1, category: d.cat, brand: d.brand, model: d.model,
+      msrp: d.msrp, powers_on: d.pow, core_function: d.fn, accessories: d.acc,
+      missing_items: d.miss, cosmetic_grade: d.cos, functional_grade: d.func,
+      tier: calcTier(d.cos, d.func, d.pow, d.fn),
+      listed_condition: d.cond, listing_status: d.status, listing_channel: d.ch,
+      list_price: d.lp, date_listed: d.dl || null, sale_price: d.sp, date_sold: d.ds || null,
+      payment_method: d.pay, platform_fees: d.fees, shipping_cost: d.ship,
+      other_costs: d.oth, notes: d.notes
+    }));
+    await supabase.insert('items', dbItems1);
+    ok(`Lot 1: ${dbItems1.length} items inserted`);
+  } catch (e) { err('Lot 1 items failed: ' + e.message); return; }
+
+  // ===== LOT 2: Furniture =====
+  info('Inserting Lot 2 (12 Furniture items)...');
+  try {
+    await supabase.insert('lots', {
+      id: 2, date: '2026-04-13', auction_price: 500, shipping_fees: 602.36,
+      other_costs: 0, total_units: 12,
+      notes: 'BStock MOR-6596653 — 2 Pallets of Dining Furniture, Bedroom Furniture, Fireplaces & More'
+    });
+    ok('Lot 2 created');
+  } catch (e) { err('Lot 2 failed: ' + e.message); return; }
+
+  const lot2Items = [
+    { sku:33, brand:'Koda Ltd', model:'Florence 5PC Dining Set', msrp:849.99, notes:'Seller: Dining Furniture' },
+    { sku:34, brand:'Universal Furniture Intl', model:'Rose Queen Bed', msrp:799.99, notes:'Seller: Bedroom Furniture' },
+    { sku:35, brand:'PT Integra Indocabint Tbk', model:'Carson 5PC Dining Set', msrp:699.99, notes:'Seller: Dining Furniture' },
+    { sku:36, brand:'Twin Star Intl', model:'Eloise 74" Fireplace', msrp:549.99, notes:'Seller: Fireplaces' },
+    { sku:37, brand:'Twin Star Intl', model:'Aurora 47" Sit Stand Desk', msrp:299.99, notes:'Seller: Office Furniture' },
+    { sku:38, brand:'Hollywood Bed and Spring', model:'Enforce King Boxspring', msrp:249.99, notes:'Seller: Bedroom Furniture' },
+    { sku:39, brand:'Whalen Limited', model:'Highland Gaslift Barstool', msrp:149.99, notes:'Seller: Dining Furniture' },
+    { sku:40, brand:'Whalen Limited', model:'Fireplace Stove', msrp:69.99, notes:'Seller: Fireplaces (unit 1 of 2)' },
+    { sku:41, brand:'Whalen Limited', model:'Fireplace Stove', msrp:69.99, notes:'Seller: Fireplaces (unit 2 of 2)' },
+    { sku:42, brand:'Hollywood Bed and Spring', model:'Premium Universal Lev-R-Lock Bed Frame', msrp:79.99, notes:'Seller: Bedroom Furniture' },
+    { sku:43, brand:'Unilin Flooring NC', model:'Tudor Multifunction', msrp:34.99, notes:'Seller: Flooring (unit 1 of 2)' },
+    { sku:44, brand:'Unilin Flooring NC', model:'Tudor Multifunction', msrp:34.99, notes:'Seller: Flooring (unit 2 of 2)' },
+  ];
+
+  try {
+    const dbItems2 = lot2Items.map(d => ({
+      sku: d.sku, lot_id: 2, category: 'Home & Kitchen', brand: d.brand, model: d.model,
+      msrp: d.msrp, powers_on: 'Not Tested (Sealed)', core_function: 'Not Tested (Sealed)',
+      accessories: 'Yes', missing_items: '', cosmetic_grade: 'A', functional_grade: 'A (Sealed)',
+      tier: 'Tier 1', listed_condition: '', listing_status: 1, listing_channel: '',
+      list_price: 0, date_listed: null, sale_price: 0, date_sold: null,
+      payment_method: '', platform_fees: 0, shipping_cost: 0, other_costs: 0, notes: d.notes
+    }));
+    await supabase.insert('items', dbItems2);
+    ok(`Lot 2: ${dbItems2.length} items inserted`);
+  } catch (e) { err('Lot 2 items failed: ' + e.message); return; }
+
+  // ===== LOT 3: Kitchen =====
+  info('Inserting Lot 3 (160 Kitchen items)...');
+  try {
+    await supabase.insert('lots', {
+      id: 3, date: '2026-04-13', auction_price: 1810, shipping_fees: 666.77,
+      other_costs: 0, total_units: 160,
+      notes: 'BStock MOR-6581942 — 2 Pallets of Small Kitchen Appliances, Cookware, Cutlery & More'
+    });
+    ok('Lot 3 created');
+  } catch (e) { err('Lot 3 failed: ' + e.message); return; }
+
+  const lot3Items = [
+    {brand:'Lagom Kitchen Company',model:'Our Place Cold Press',msrp:169.99,notes:'Seller: Small Kitchen Appliances (unit 1 of 12)'},
+    {brand:'Lagom Kitchen Company',model:'Our Place Cold Press',msrp:169.99,notes:'Seller: Small Kitchen Appliances (unit 2 of 12)'},
+    {brand:'Lagom Kitchen Company',model:'Our Place Cold Press',msrp:169.99,notes:'Seller: Small Kitchen Appliances (unit 3 of 12)'},
+    {brand:'Lagom Kitchen Company',model:'Our Place Cold Press',msrp:169.99,notes:'Seller: Small Kitchen Appliances (unit 4 of 12)'},
+    {brand:'Lagom Kitchen Company',model:'Our Place Cold Press',msrp:169.99,notes:'Seller: Small Kitchen Appliances (unit 5 of 12)'},
+    {brand:'Lagom Kitchen Company',model:'Our Place Cold Press',msrp:169.99,notes:'Seller: Small Kitchen Appliances (unit 6 of 12)'},
+    {brand:'Lagom Kitchen Company',model:'Our Place Cold Press',msrp:169.99,notes:'Seller: Small Kitchen Appliances (unit 7 of 12)'},
+    {brand:'Lagom Kitchen Company',model:'Our Place Cold Press',msrp:169.99,notes:'Seller: Small Kitchen Appliances (unit 8 of 12)'},
+    {brand:'Lagom Kitchen Company',model:'Our Place Cold Press',msrp:169.99,notes:'Seller: Small Kitchen Appliances (unit 9 of 12)'},
+    {brand:'Lagom Kitchen Company',model:'Our Place Cold Press',msrp:169.99,notes:'Seller: Small Kitchen Appliances (unit 10 of 12)'},
+    {brand:'Lagom Kitchen Company',model:'Our Place Cold Press',msrp:169.99,notes:'Seller: Small Kitchen Appliances (unit 11 of 12)'},
+    {brand:'Lagom Kitchen Company',model:'Our Place Cold Press',msrp:169.99,notes:'Seller: Small Kitchen Appliances (unit 12 of 12)'},
+    {brand:'Bsh Home Appliances',model:'Bosch Verocafe Full Auto',msrp:1699.99,notes:'Seller: Small Kitchen Appliances'},
+    {brand:'Bsh Home Appliances',model:'Bosch 300 Series Fullauto',msrp:799.99,notes:'Seller: Small Kitchen Appliances'},
+    {brand:'Newell Brands Dist',model:'Foodsaver Vac Seal VS2280',msrp:129.99,notes:'Seller: Food Storage (unit 1 of 4)'},
+    {brand:'Newell Brands Dist',model:'Foodsaver Vac Seal VS2280',msrp:129.99,notes:'Seller: Food Storage (unit 2 of 4)'},
+    {brand:'Newell Brands Dist',model:'Foodsaver Vac Seal VS2280',msrp:129.99,notes:'Seller: Food Storage (unit 3 of 4)'},
+    {brand:'Newell Brands Dist',model:'Foodsaver Vac Seal VS2280',msrp:129.99,notes:'Seller: Food Storage (unit 4 of 4)'},
+    {brand:'Steelstone Group',model:'Gourmia French Door',msrp:159.99,notes:'Seller: Small Kitchen Appliances (unit 1 of 3)'},
+    {brand:'Steelstone Group',model:'Gourmia French Door',msrp:159.99,notes:'Seller: Small Kitchen Appliances (unit 2 of 3)'},
+    {brand:'Steelstone Group',model:'Gourmia French Door',msrp:159.99,notes:'Seller: Small Kitchen Appliances (unit 3 of 3)'},
+    {brand:'Groupe Seb',model:'T-fal Clipso 8QT',msrp:99.99,notes:'Seller: Cookware (unit 1 of 4)'},
+    {brand:'Groupe Seb',model:'T-fal Clipso 8QT',msrp:99.99,notes:'Seller: Cookware (unit 2 of 4)'},
+    {brand:'Groupe Seb',model:'T-fal Clipso 8QT',msrp:99.99,notes:'Seller: Cookware (unit 3 of 4)'},
+    {brand:'Groupe Seb',model:'T-fal Clipso 8QT',msrp:99.99,notes:'Seller: Cookware (unit 4 of 4)'},
+    {brand:'Tiger Corporation',model:'Tiger No Pfas Rice Cooker',msrp:99.99,notes:'Seller: Small Kitchen Appliances (unit 1 of 4)'},
+    {brand:'Tiger Corporation',model:'Tiger No Pfas Rice Cooker',msrp:99.99,notes:'Seller: Small Kitchen Appliances (unit 2 of 4)'},
+    {brand:'Tiger Corporation',model:'Tiger No Pfas Rice Cooker',msrp:99.99,notes:'Seller: Small Kitchen Appliances (unit 3 of 4)'},
+    {brand:'Tiger Corporation',model:'Tiger No Pfas Rice Cooker',msrp:99.99,notes:'Seller: Small Kitchen Appliances (unit 4 of 4)'},
+    {brand:'New Star Food Service',model:'Cangshan Olympus Black',msrp:319.99,notes:'Seller: Cutlery'},
+    {brand:'The Cookware Company',model:'Greenpan Reserve 10PC',msrp:289.99,notes:'Seller: Cookware'},
+    {brand:'The Cookware Company',model:'Greenpan Eras 11-PIECE',msrp:249.99,notes:'Seller: Cookware'},
+    {brand:'IB Appliances US Holdings',model:'Instant Pot 6QT Rio Elec',msrp:79.99,notes:'Seller: Small Kitchen Appliances (unit 1 of 3)'},
+    {brand:'IB Appliances US Holdings',model:'Instant Pot 6QT Rio Elec',msrp:79.99,notes:'Seller: Small Kitchen Appliances (unit 2 of 3)'},
+    {brand:'IB Appliances US Holdings',model:'Instant Pot 6QT Rio Elec',msrp:79.99,notes:'Seller: Small Kitchen Appliances (unit 3 of 3)'},
+    {brand:'Meyer Marketing',model:'Circulon 13PC HA Cookware',msrp:229.99,notes:'Seller: Cookware'},
+    {brand:'New Star Food Service',model:'Cangshan L Series 17PC Bl',msrp:229.99,notes:'Seller: Cutlery'},
+    {brand:'Boston Foundry',model:'Ceramiclad 4PC Frying Pan',msrp:229.99,notes:'Seller: Cookware'},
+    {brand:'Cangshan Cutlery Company',model:'Cangshan Denali 17PC',msrp:219.99,notes:'Seller: Cutlery'},
+    {brand:'Zwilling JA Henckels',model:'Henckels Forged Triple',msrp:109.99,notes:'Seller: Cutlery (unit 1 of 2)'},
+    {brand:'Zwilling JA Henckels',model:'Henckels Forged Triple',msrp:109.99,notes:'Seller: Cutlery (unit 2 of 2)'},
+    {brand:'The Clorox Sales',model:'Brita Water Pitcher',msrp:33.99,notes:'Seller: Water Filtration (unit 1 of 6)'},
+    {brand:'The Clorox Sales',model:'Brita Water Pitcher',msrp:33.99,notes:'Seller: Water Filtration (unit 2 of 6)'},
+    {brand:'The Clorox Sales',model:'Brita Water Pitcher',msrp:33.99,notes:'Seller: Water Filtration (unit 3 of 6)'},
+    {brand:'The Clorox Sales',model:'Brita Water Pitcher',msrp:33.99,notes:'Seller: Water Filtration (unit 4 of 6)'},
+    {brand:'The Clorox Sales',model:'Brita Water Pitcher',msrp:33.99,notes:'Seller: Water Filtration (unit 5 of 6)'},
+    {brand:'The Clorox Sales',model:'Brita Water Pitcher',msrp:33.99,notes:'Seller: Water Filtration (unit 6 of 6)'},
+    {brand:'Conair',model:'Cuis 12C Elite Diecast',msrp:199.99,notes:'Seller: Small Kitchen Appliances'},
+    {brand:'Delonghi America',model:'Braun Triforce',msrp:199.99,notes:'Seller: Small Kitchen Appliances'},
+    {brand:'Breville',model:'Breville Essenza Mini',msrp:189.99,notes:'Seller: Small Kitchen Appliances'},
+    {brand:'IB Appliances US Holdings',model:'Instant Pot Duo Crisp',msrp:189.99,notes:'Seller: Small Kitchen Appliances'},
+    {brand:'Conair',model:'Cuisinart Grind And Brew',msrp:169.99,notes:'Seller: Small Kitchen Appliances'},
+    {brand:'Lifetime Brands',model:'Taylor Waterproof Digital',msrp:16.99,notes:'Seller: Kitchen Essentials (unit 1 of 10)'},
+    {brand:'Lifetime Brands',model:'Taylor Waterproof Digital',msrp:16.99,notes:'Seller: Kitchen Essentials (unit 2 of 10)'},
+    {brand:'Lifetime Brands',model:'Taylor Waterproof Digital',msrp:16.99,notes:'Seller: Kitchen Essentials (unit 3 of 10)'},
+    {brand:'Lifetime Brands',model:'Taylor Waterproof Digital',msrp:16.99,notes:'Seller: Kitchen Essentials (unit 4 of 10)'},
+    {brand:'Lifetime Brands',model:'Taylor Waterproof Digital',msrp:16.99,notes:'Seller: Kitchen Essentials (unit 5 of 10)'},
+    {brand:'Lifetime Brands',model:'Taylor Waterproof Digital',msrp:16.99,notes:'Seller: Kitchen Essentials (unit 6 of 10)'},
+    {brand:'Lifetime Brands',model:'Taylor Waterproof Digital',msrp:16.99,notes:'Seller: Kitchen Essentials (unit 7 of 10)'},
+    {brand:'Lifetime Brands',model:'Taylor Waterproof Digital',msrp:16.99,notes:'Seller: Kitchen Essentials (unit 8 of 10)'},
+    {brand:'Lifetime Brands',model:'Taylor Waterproof Digital',msrp:16.99,notes:'Seller: Kitchen Essentials (unit 9 of 10)'},
+    {brand:'Lifetime Brands',model:'Taylor Waterproof Digital',msrp:16.99,notes:'Seller: Kitchen Essentials (unit 10 of 10)'},
+    {brand:'The Cookware Company',model:'Greenpan Reserve 5PC',msrp:164.99,notes:'Seller: Cookware'},
+    {brand:'Lagom Kitchen Company',model:'Our Place 8PC Ceramic Blu',msrp:159.99,notes:'Seller: Cookware'},
+    {brand:'The Cookware Company',model:'Ms Dutch Oven Brser Lgray',msrp:149.99,notes:'Seller: Cookware'},
+    {brand:'Pandex Merchandise',model:'Pandex Icon Glasses',msrp:24.99,notes:'Seller: Drinkware (unit 1 of 6)'},
+    {brand:'Pandex Merchandise',model:'Pandex Icon Glasses',msrp:24.99,notes:'Seller: Drinkware (unit 2 of 6)'},
+    {brand:'Pandex Merchandise',model:'Pandex Icon Glasses',msrp:24.99,notes:'Seller: Drinkware (unit 3 of 6)'},
+    {brand:'Pandex Merchandise',model:'Pandex Icon Glasses',msrp:24.99,notes:'Seller: Drinkware (unit 4 of 6)'},
+    {brand:'Pandex Merchandise',model:'Pandex Icon Glasses',msrp:24.99,notes:'Seller: Drinkware (unit 5 of 6)'},
+    {brand:'Pandex Merchandise',model:'Pandex Icon Glasses',msrp:24.99,notes:'Seller: Drinkware (unit 6 of 6)'},
+    {brand:'Conair',model:'Cuisinart 2 Slice Digital',msrp:44.99,notes:'Seller: Small Kitchen Appliances (unit 1 of 3)'},
+    {brand:'Conair',model:'Cuisinart 2 Slice Digital',msrp:44.99,notes:'Seller: Small Kitchen Appliances (unit 2 of 3)'},
+    {brand:'Conair',model:'Cuisinart 2 Slice Digital',msrp:44.99,notes:'Seller: Small Kitchen Appliances (unit 3 of 3)'},
+    {brand:'Lifetime Brands',model:'Mikasa Ciara 40PC',msrp:119.99,notes:'Seller: Dinnerware'},
+    {brand:'Groupe Seb',model:'T-fal Ceramic Non Stick',msrp:39.99,notes:'Seller: Cookware (unit 1 of 3)'},
+    {brand:'Groupe Seb',model:'T-fal Ceramic Non Stick',msrp:39.99,notes:'Seller: Cookware (unit 2 of 3)'},
+    {brand:'Groupe Seb',model:'T-fal Ceramic Non Stick',msrp:39.99,notes:'Seller: Cookware (unit 3 of 3)'},
+    {brand:'The Cookware Company',model:'Greenpan The Big Fry 13.4',msrp:29.99,notes:'Seller: Cookware (unit 1 of 4)'},
+    {brand:'The Cookware Company',model:'Greenpan The Big Fry 13.4',msrp:29.99,notes:'Seller: Cookware (unit 2 of 4)'},
+    {brand:'The Cookware Company',model:'Greenpan The Big Fry 13.4',msrp:29.99,notes:'Seller: Cookware (unit 3 of 4)'},
+    {brand:'The Cookware Company',model:'Greenpan The Big Fry 13.4',msrp:29.99,notes:'Seller: Cookware (unit 4 of 4)'},
+    {brand:'Pro Mart Industries',model:'Smartdesign Sofa Arm Tray',msrp:18.99,notes:'Seller: Serveware (unit 1 of 6)'},
+    {brand:'Pro Mart Industries',model:'Smartdesign Sofa Arm Tray',msrp:18.99,notes:'Seller: Serveware (unit 2 of 6)'},
+    {brand:'Pro Mart Industries',model:'Smartdesign Sofa Arm Tray',msrp:18.99,notes:'Seller: Serveware (unit 3 of 6)'},
+    {brand:'Pro Mart Industries',model:'Smartdesign Sofa Arm Tray',msrp:18.99,notes:'Seller: Serveware (unit 4 of 6)'},
+    {brand:'Pro Mart Industries',model:'Smartdesign Sofa Arm Tray',msrp:18.99,notes:'Seller: Serveware (unit 5 of 6)'},
+    {brand:'Pro Mart Industries',model:'Smartdesign Sofa Arm Tray',msrp:18.99,notes:'Seller: Serveware (unit 6 of 6)'},
+    {brand:'Simplehuman',model:'Simplehuman Silver Soap',msrp:99.99,notes:'Seller: Kitchen Essentials'},
+    {brand:'Newell Brands Dist',model:'Foodsaver Vacuum Sealer',msrp:99.99,notes:'Seller: Food Storage'},
+    {brand:'Storebound',model:'Dash Disney Waffle Maker',msrp:49.99,notes:'Seller: Small Kitchen Appliances (unit 1 of 2)'},
+    {brand:'Storebound',model:'Dash Disney Waffle Maker',msrp:49.99,notes:'Seller: Small Kitchen Appliances (unit 2 of 2)'},
+    {brand:'Sensio',model:'Bella Slow Cooker Set',msrp:49.99,notes:'Seller: Small Kitchen Appliances (unit 1 of 2)'},
+    {brand:'Sensio',model:'Bella Slow Cooker Set',msrp:49.99,notes:'Seller: Small Kitchen Appliances (unit 2 of 2)'},
+    {brand:'Conair',model:'Cuisinart Brewcentral 14C',msrp:49.99,notes:'Seller: Small Kitchen Appliances (unit 1 of 2)'},
+    {brand:'Conair',model:'Cuisinart Brewcentral 14C',msrp:49.99,notes:'Seller: Small Kitchen Appliances (unit 2 of 2)'},
+    {brand:'Conair',model:'Cuis Immersion Blendr',msrp:39.99,notes:'Seller: Small Kitchen Appliances (unit 1 of 2)'},
+    {brand:'Conair',model:'Cuis Immersion Blendr',msrp:39.99,notes:'Seller: Small Kitchen Appliances (unit 2 of 2)'},
+    {brand:'Conair',model:'Cuisinart Immersion',msrp:39.99,notes:'Seller: Small Kitchen Appliances (unit 1 of 2)'},
+    {brand:'Conair',model:'Cuisinart Immersion',msrp:39.99,notes:'Seller: Small Kitchen Appliances (unit 2 of 2)'},
+    {brand:'Foodware',model:'Winco 8QT Folding Chafer',msrp:38.99,notes:'Seller: Commercial Kitchen Items (unit 1 of 2)'},
+    {brand:'Foodware',model:'Winco 8QT Folding Chafer',msrp:38.99,notes:'Seller: Commercial Kitchen Items (unit 2 of 2)'},
+    {brand:'Helen OF Troy',model:'Oxo 4PC Pop Container',msrp:37.99,notes:'Seller: Food Storage (unit 1 of 2)'},
+    {brand:'Helen OF Troy',model:'Oxo 4PC Pop Container',msrp:37.99,notes:'Seller: Food Storage (unit 2 of 2)'},
+    {brand:'Libbey Glass',model:'Libbey Preston Flare 16PC',msrp:18.99,notes:'Seller: Drinkware (unit 1 of 4)'},
+    {brand:'Libbey Glass',model:'Libbey Preston Flare 16PC',msrp:18.99,notes:'Seller: Drinkware (unit 2 of 4)'},
+    {brand:'Libbey Glass',model:'Libbey Preston Flare 16PC',msrp:18.99,notes:'Seller: Drinkware (unit 3 of 4)'},
+    {brand:'Libbey Glass',model:'Libbey Preston Flare 16PC',msrp:18.99,notes:'Seller: Drinkware (unit 4 of 4)'},
+    {brand:'Teakhaus',model:'Teakhaus Cutting Board',msrp:69.99,notes:'Seller: Food Prep'},
+    {brand:'Tramontina',model:'Tramontina Cast Iron',msrp:59.99,notes:'Seller: Cookware'},
+    {brand:'Tramontina',model:'Tramontina 3PC SS Ceramic',msrp:59.99,notes:'Seller: Cookware'},
+    {brand:'IB Appliances US Holdings',model:'Instant Pot Slow Cooker',msrp:59.99,notes:'Seller: Small Kitchen Appliances'},
+    {brand:'Conair',model:'Cuisinart Brewcentral 14C',msrp:59.99,notes:'Seller: Small Kitchen Appliances'},
+    {brand:'Steelstone Group',model:'Gourmia 8QT Air Fryer',msrp:59.99,notes:'Seller: Small Kitchen Appliances'},
+    {brand:'Lifetime Brands',model:'Faberware Salad Spinner',msrp:16.99,notes:'Seller: Food Prep (unit 1 of 3)'},
+    {brand:'Lifetime Brands',model:'Faberware Salad Spinner',msrp:16.99,notes:'Seller: Food Prep (unit 2 of 3)'},
+    {brand:'Lifetime Brands',model:'Faberware Salad Spinner',msrp:16.99,notes:'Seller: Food Prep (unit 3 of 3)'},
+    {brand:'Meyer Corporation',model:'Circulon 12" Deep Skillet',msrp:49.99,notes:'Seller: Cookware'},
+    {brand:'Nordic Ware',model:'Nordic Ware Naturals',msrp:49.99,notes:'Seller: Bakeware'},
+    {brand:'Conair',model:'Cuisinart Long Slot',msrp:49.99,notes:'Seller: Small Kitchen Appliances'},
+    {brand:'Sensio',model:'Bella Xl Griddle',msrp:49.99,notes:'Seller: Small Kitchen Appliances'},
+    {brand:'Lifetime Brands',model:'Mikasa Hammered Trays 2PC',msrp:44.99,notes:'Seller: Serveware'},
+    {brand:'Miu',model:'Miu Silicone Freezer Tray',msrp:21.99,notes:'Seller: Food Storage (unit 1 of 2)'},
+    {brand:'Miu',model:'Miu Silicone Freezer Tray',msrp:21.99,notes:'Seller: Food Storage (unit 2 of 2)'},
+    {brand:'Seville Classics',model:'Seville Expandable Org',msrp:19.99,notes:'Seller: Storage/Laundry (unit 1 of 2)'},
+    {brand:'Seville Classics',model:'Seville Expandable Org',msrp:19.99,notes:'Seller: Storage/Laundry (unit 2 of 2)'},
+    {brand:'Lifetime Brands',model:'Taylor Precision Digital',msrp:19.99,notes:'Seller: Kitchen Essentials (unit 1 of 2)'},
+    {brand:'Lifetime Brands',model:'Taylor Precision Digital',msrp:19.99,notes:'Seller: Kitchen Essentials (unit 2 of 2)'},
+    {brand:'Lodge Manufacturing',model:'Lodge 11" Skillet',msrp:19.99,notes:'Seller: Cookware (unit 1 of 2)'},
+    {brand:'Lodge Manufacturing',model:'Lodge 11" Skillet',msrp:19.99,notes:'Seller: Cookware (unit 2 of 2)'},
+    {brand:'Lifetime Brands',model:'Kitchenaid Colander',msrp:18.99,notes:'Seller: Food Prep (unit 1 of 2)'},
+    {brand:'Lifetime Brands',model:'Kitchenaid Colander',msrp:18.99,notes:'Seller: Food Prep (unit 2 of 2)'},
+    {brand:'Lifetime Brands',model:'Mikasa 20PC Flatware Set',msrp:34.99,notes:'Seller: Flatware'},
+    {brand:'Miu',model:'Miu 2-TIER Steamer Basket',msrp:16.99,notes:'Seller: Food Prep (unit 1 of 2)'},
+    {brand:'Miu',model:'Miu 2-TIER Steamer Basket',msrp:16.99,notes:'Seller: Food Prep (unit 2 of 2)'},
+    {brand:'Storebound',model:'Dash Popcorn Maker',msrp:29.99,notes:'Seller: Small Kitchen Appliances'},
+    {brand:'Safdie And Company',model:'Safdie 10PC Ceramic',msrp:29.99,notes:'Seller: Food Storage'},
+    {brand:'Party US Operations',model:'Tupperware 2.1L Pitcher',msrp:29.99,notes:'Seller: Drinkware'},
+    {brand:'Tabletops Unlimited',model:'Denmark All Purpose Bowl',msrp:12.99,notes:'Seller: Serveware (unit 1 of 2)'},
+    {brand:'Tabletops Unlimited',model:'Denmark All Purpose Bowl',msrp:12.99,notes:'Seller: Serveware (unit 2 of 2)'},
+    {brand:'Tramontina',model:'Tramontina 12" Fry Pan',msrp:24.99,notes:'Seller: Commercial Kitchen Items'},
+    {brand:'Hollywood Chairs',model:'Destination Cutting Board',msrp:24.99,notes:'Seller: Food Prep'},
+    {brand:'Miu',model:'Miu 8PC SS Mixing Bowls',msrp:24.99,notes:'Seller: Food Prep'},
+    {brand:'Bear Down Brands',model:'Bentgo Glass Salad Box',msrp:24.99,notes:'Seller: Food Storage'},
+    {brand:'Lifetime Brands',model:'Kitchenaid Colander',msrp:24.99,notes:'Seller: Food Prep'},
+    {brand:'Takeya Usa Corporation',model:'Thermoflask SS 40OZ 2PK',msrp:22.99,notes:'Seller: Drinkware'},
+    {brand:'Nordic Ware',model:'Nordic Ware 3PC Baking S',msrp:22.99,notes:'Seller: Bakeware'},
+    {brand:'Takeya Usa Corporation',model:'Thermoflask Thermalcoffee',msrp:21.99,notes:'Seller: Drinkware'},
+    {brand:'Eurow And O Reilly',model:'Eur Bar-mop TOWEL-25PK',msrp:19.99,notes:'Seller: Business Domestics'},
+    {brand:'Merchsource',model:'Sharper Image Smores',msrp:19.99,notes:'Seller: Small Kitchen Appliances'},
+    {brand:'Certified Intl',model:'Certified 10PC Provence',msrp:9.99,notes:'Seller: Serveware (unit 1 of 2)'},
+    {brand:'Certified Intl',model:'Certified 10PC Provence',msrp:9.99,notes:'Seller: Serveware (unit 2 of 2)'},
+    {brand:'Nordic Ware',model:'Nordic Naturals 1/6 Sheet',msrp:18.99,notes:'Seller: Bakeware'},
+    {brand:'Pro Mart Industries',model:'Smartdesign Sofa Arm Tray',msrp:18.99,notes:'Seller: Serveware'},
+    {brand:'Fortessa Tableware Soluti',model:'Fortessa Jupiter Bowls',msrp:16.99,notes:'Seller: Serveware'},
+    {brand:'Corelle Brands',model:'Pyrex 8PC Mixed Colored',msrp:16.99,notes:'Seller: Food Prep'},
+    {brand:'Ymf Carpets',model:'Multi Purpose Kitchen Mat',msrp:14.99,notes:'Seller: Linens'},
+    {brand:'Leapfrog Product Developm',model:'Ello 14PC Reusable Food',msrp:12.99,notes:'Seller: Food Storage'},
+    {brand:'Certified Intl',model:'10PC 4.75" Bowl Set',msrp:9.99,notes:'Seller: Serveware'},
+    {brand:'Foodware',model:'Winco Squeeze Bottles 6PK',msrp:5.59,notes:'Seller: Commercial Kitchen Items'},
+  ];
+
+  try {
+    let skuCounter = 45; // Lot 1 used 1-32, Lot 2 used 33-44
+    const dbItems3 = lot3Items.map(d => ({
+      sku: skuCounter++, lot_id: 3, category: 'Home & Kitchen', brand: d.brand, model: d.model,
+      msrp: d.msrp, powers_on: 'Not Tested (Sealed)', core_function: 'Not Tested (Sealed)',
+      accessories: 'Yes', missing_items: '', cosmetic_grade: 'A', functional_grade: 'A (Sealed)',
+      tier: 'Tier 1', listed_condition: '', listing_status: 1, listing_channel: '',
+      list_price: 0, date_listed: null, sale_price: 0, date_sold: null,
+      payment_method: '', platform_fees: 0, shipping_cost: 0, other_costs: 0, notes: d.notes
+    }));
+
+    // Insert in batches of 50
+    for (let i = 0; i < dbItems3.length; i += 50) {
+      const batch = dbItems3.slice(i, i + 50);
+      await supabase.insert('items', batch);
+      ok(`Lot 3 batch: items ${i+1}-${Math.min(i+50, dbItems3.length)} inserted`);
+    }
+    ok(`Lot 3: ${dbItems3.length} items total`);
+
+    // Update next_sku counter
+    const nextSku = skuCounter;
+    await supabase.update('app_config', 'key=eq.next_sku', { value: String(nextSku) });
+    ok(`next_sku set to ${nextSku}`);
+
+  } catch (e) { err('Lot 3 items failed: ' + e.message); return; }
+
+  ok('');
+  ok('=== MIGRATION COMPLETE ===');
+  ok('3 lots, 204 items migrated to Supabase.');
+  ok('You can now open index.html — it will load from the database!');
+}
+
+function calcTier(cosmetic, functional, powersOn, coreFunction) {
+  if (powersOn === 'No' || coreFunction === 'No' || functional === 'C' || cosmetic === 'C') return 'Tier 3';
+  if (cosmetic === 'B' || functional === 'B') return 'Tier 2';
+  return 'Tier 1';
+}
+</script>
+</body>
+</html>
