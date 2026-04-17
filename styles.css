@@ -123,6 +123,31 @@ td select.tier-select-3 { color: var(--red); font-weight: 600; }
 .dropdown-opt-item .opt-remove:hover { background: rgba(248,113,113,.15); }
 .dropdown-opt-item.drag-over { border-color: var(--accent); background: rgba(79,140,255,.1); }
 
+/* Dashboard Charts */
+.chart-toggle-bar { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
+.toggle-label { font-size: 12px; color: var(--text-dim); font-weight: 500; text-transform: uppercase; letter-spacing: .5px; }
+.toggle-group { display: flex; gap: 0; }
+.toggle-btn { padding: 6px 16px; border: 1px solid var(--border); background: var(--surface); color: var(--text-dim); font-size: 12px; font-weight: 500; cursor: pointer; transition: all .15s; }
+.toggle-btn:first-child { border-radius: 6px 0 0 6px; }
+.toggle-btn:last-child { border-radius: 0 6px 6px 0; }
+.toggle-btn:not(:first-child) { border-left: none; }
+.toggle-btn:hover { color: var(--text); background: var(--surface2); }
+.toggle-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+.toggle-btn.active + .toggle-btn { border-left-color: var(--accent); }
+
+.chart-row { display: grid; gap: 12px; margin-bottom: 12px; }
+.chart-row.two-col { grid-template-columns: 1fr 1fr; }
+@media (max-width: 900px) { .chart-row.two-col { grid-template-columns: 1fr; } }
+
+.chart-card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 16px; }
+.chart-title { font-size: 13px; font-weight: 600; color: var(--text); margin-bottom: 12px; }
+.chart-subtitle { font-size: 11px; font-weight: 400; color: var(--text-dim); margin-left: 8px; }
+.chart-container { position: relative; width: 100%; }
+.donut-container { max-width: 320px; margin: 0 auto; }
+.bar-container { height: 220px; }
+.chart-container canvas { width: 100% !important; }
+.chart-empty { display: flex; align-items: center; justify-content: center; height: 180px; color: var(--text-dim); font-size: 13px; }
+
 /* Toast notification */
 .toast { position: fixed; bottom: 20px; right: 20px; background: var(--surface2); border: 1px solid var(--green); color: var(--green); padding: 12px 20px; border-radius: 8px; font-size: 13px; z-index: 200; transform: translateY(100px); opacity: 0; transition: all .3s; }
 .toast.show { transform: translateY(0); opacity: 1; }

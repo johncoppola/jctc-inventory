@@ -563,6 +563,321 @@ function filterItems(items, search, lotFilter) {
   return items;
 }
 
+// ===== DASHBOARD CHARTS =====
+let _chartRange = 'all'; // 30, 60, 90, or 'all'
+const _chartInstances = {}; // track Chart.js instances for cleanup
+
+function setChartRange(range) {
+  _chartRange = range;
+  document.querySelectorAll('.toggle-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.range == range);
+  });
+  renderDashboardCharts();
+}
+
+function _destroyChart(id) {
+  if (_chartInstances[id]) { _chartInstances[id].destroy(); delete _chartInstances[id]; }
+}
+
+function _getRangeLabel() {
+  return _chartRange === 'all' ? 'All Time' : `Last ${_chartRange} Days`;
+}
+
+function _filterByRange(items, dateField) {
+  if (_chartRange === 'all') return items;
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - Number(_chartRange));
+  const cutoffStr = cutoff.toISOString().split('T')[0];
+  return items.filter(i => i[dateField] && i[dateField] >= cutoffStr);
+}
+
+// Week start helper — returns 'YYYY-MM-DD' of the Monday of that week
+function _weekStart(dateStr) {
+  const d = new Date(dateStr + 'T00:00:00');
+  const day = d.getDay();
+  const diff = d.getDate() - day + (day === 0 ? -6 : 1);
+  const monday = new Date(d.setDate(diff));
+  return monday.toISOString().split('T')[0];
+}
+
+// Short label for a week: 'Jan 6'
+function _weekLabel(dateStr) {
+  const d = new Date(dateStr + 'T00:00:00');
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
+
+// Chart.js default overrides for dark theme
+const CHART_COLORS = {
+  grid: 'rgba(46,51,71,0.6)',
+  text: '#8b90a5',
+  accent: '#4f8cff',
+  green: '#34d399',
+  red: '#f87171',
+  yellow: '#fbbf24',
+  orange: '#fb923c',
+  purple: '#a78bfa',
+  pink: '#f472b6',
+  teal: '#2dd4bf',
+  blue: '#60a5fa',
+  palette: ['#4f8cff','#34d399','#fbbf24','#fb923c','#a78bfa','#f472b6','#2dd4bf','#60a5fa','#f87171','#818cf8']
+};
+
+function _chartDefaults() {
+  return {
+    responsive: true,
+    maintainAspectRatio: true,
+    plugins: {
+      legend: { labels: { color: CHART_COLORS.text, font: { size: 11 }, padding: 12, usePointStyle: true, pointStyleWidth: 8 } },
+      tooltip: { backgroundColor: '#1a1d27', titleColor: '#e4e7ef', bodyColor: '#e4e7ef', borderColor: '#2e3347', borderWidth: 1, padding: 10, cornerRadius: 6, titleFont: { size: 12 }, bodyFont: { size: 12 } }
+    }
+  };
+}
+
+function _scaleDefaults() {
+  return {
+    x: { ticks: { color: CHART_COLORS.text, font: { size: 11 } }, grid: { color: CHART_COLORS.grid }, border: { color: CHART_COLORS.grid } },
+    y: { ticks: { color: CHART_COLORS.text, font: { size: 11 } }, grid: { color: CHART_COLORS.grid }, border: { color: CHART_COLORS.grid }, beginAtZero: true }
+  };
+}
+
+// ===== INDIVIDUAL CHART BUILDERS =====
+
+function renderChartCategory() {
+  const open = DATA.items.filter(i => i.listingStatus != 5);
+  const counts = {};
+  open.forEach(i => { const cat = i.category || 'Other'; counts[cat] = (counts[cat] || 0) + 1; });
+  const labels = Object.keys(counts);
+  const data = Object.values(counts);
+
+  _destroyChart('chartCategory');
+  if (!labels.length) { document.getElementById('chartCategory').parentElement.innerHTML = '<div class="chart-empty">No open inventory</div>'; return; }
+
+  _chartInstances['chartCategory'] = new Chart(document.getElementById('chartCategory'), {
+    type: 'doughnut',
+    data: { labels, datasets: [{ data, backgroundColor: CHART_COLORS.palette.slice(0, labels.length), borderColor: '#1a1d27', borderWidth: 2 }] },
+    options: { ..._chartDefaults(), cutout: '60%', plugins: { ..._chartDefaults().plugins, legend: { ...(_chartDefaults().plugins.legend), position: 'right' } } }
+  });
+}
+
+function renderChartCondition() {
+  const open = DATA.items.filter(i => i.listingStatus != 5);
+  const counts = {};
+  open.forEach(i => { const cond = i.listedCondition || 'Not Set'; counts[cond] = (counts[cond] || 0) + 1; });
+  const labels = Object.keys(counts);
+  const data = Object.values(counts);
+
+  _destroyChart('chartCondition');
+  if (!labels.length) { document.getElementById('chartCondition').parentElement.innerHTML = '<div class="chart-empty">No open inventory</div>'; return; }
+
+  _chartInstances['chartCondition'] = new Chart(document.getElementById('chartCondition'), {
+    type: 'doughnut',
+    data: { labels, datasets: [{ data, backgroundColor: CHART_COLORS.palette.slice(0, labels.length), borderColor: '#1a1d27', borderWidth: 2 }] },
+    options: { ..._chartDefaults(), cutout: '60%', plugins: { ..._chartDefaults().plugins, legend: { ...(_chartDefaults().plugins.legend), position: 'right' } } }
+  });
+}
+
+function renderChartAging() {
+  const open = DATA.items.filter(i => i.listingStatus != 5);
+  const today = new Date();
+  const buckets = { '0–30 days': 0, '30–60 days': 0, '60–90 days': 0, '90–120 days': 0, '120+ days': 0 };
+
+  open.forEach(i => {
+    // Use dateListed, or fall back to lot date, or treat as old
+    let entryDate = i.dateListed;
+    if (!entryDate) {
+      const lot = DATA.lots.find(l => l.id == i.lotId);
+      entryDate = lot ? lot.date : null;
+    }
+    if (!entryDate) { buckets['120+ days']++; return; }
+    const days = Math.floor((today - new Date(entryDate + 'T00:00:00')) / 86400000);
+    if (days < 30) buckets['0–30 days']++;
+    else if (days < 60) buckets['30–60 days']++;
+    else if (days < 90) buckets['60–90 days']++;
+    else if (days < 120) buckets['90–120 days']++;
+    else buckets['120+ days']++;
+  });
+
+  const labels = Object.keys(buckets);
+  const data = Object.values(buckets);
+  const colors = [CHART_COLORS.green, CHART_COLORS.blue, CHART_COLORS.yellow, CHART_COLORS.orange, CHART_COLORS.red];
+
+  _destroyChart('chartAging');
+
+  _chartInstances['chartAging'] = new Chart(document.getElementById('chartAging'), {
+    type: 'bar',
+    data: { labels, datasets: [{ data, backgroundColor: colors, borderRadius: 4, maxBarThickness: 60 }] },
+    options: {
+      ..._chartDefaults(),
+      maintainAspectRatio: false,
+      indexAxis: 'y',
+      plugins: { ..._chartDefaults().plugins, legend: { display: false },
+        tooltip: { ..._chartDefaults().plugins.tooltip, callbacks: { label: ctx => `${ctx.raw} items` } }
+      },
+      scales: {
+        x: { ..._scaleDefaults().x, title: { display: true, text: 'Items', color: CHART_COLORS.text, font: { size: 11 } } },
+        y: { ..._scaleDefaults().y, grid: { display: false } }
+      }
+    }
+  });
+}
+
+function renderChartSales() {
+  const sold = _filterByRange(DATA.items.filter(i => i.listingStatus == 5 && i.dateSold), 'dateSold');
+  const rangeLabel = _getRangeLabel();
+  const el = document.getElementById('salesRangeLabel');
+  if (el) el.textContent = `${rangeLabel} — Weekly`;
+
+  // Group by week
+  const weeks = {};
+  sold.forEach(i => {
+    const wk = _weekStart(i.dateSold);
+    if (!weeks[wk]) weeks[wk] = { count: 0, revenue: 0 };
+    weeks[wk].count++;
+    weeks[wk].revenue += Number(i.salePrice) || 0;
+  });
+
+  const sortedWeeks = Object.keys(weeks).sort();
+  const labels = sortedWeeks.map(_weekLabel);
+  const countData = sortedWeeks.map(w => weeks[w].count);
+  const revenueData = sortedWeeks.map(w => weeks[w].revenue);
+
+  _destroyChart('chartSales');
+  if (!sortedWeeks.length) { document.getElementById('chartSales').parentElement.innerHTML = '<div class="chart-empty">No sales in this period</div>'; return; }
+
+  _chartInstances['chartSales'] = new Chart(document.getElementById('chartSales'), {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [
+        { label: 'Sales', data: countData, backgroundColor: CHART_COLORS.accent, borderRadius: 4, maxBarThickness: 40, yAxisID: 'y' },
+        { label: 'Revenue', data: revenueData, type: 'line', borderColor: CHART_COLORS.green, backgroundColor: 'rgba(52,211,153,0.1)', pointBackgroundColor: CHART_COLORS.green, pointRadius: 3, tension: 0.3, fill: true, yAxisID: 'y1' }
+      ]
+    },
+    options: {
+      ..._chartDefaults(),
+      scales: {
+        x: { ..._scaleDefaults().x },
+        y: { ..._scaleDefaults().y, position: 'left', title: { display: true, text: 'Sales', color: CHART_COLORS.text, font: { size: 11 } },
+          ticks: { ..._scaleDefaults().y.ticks, stepSize: 1 } },
+        y1: { ..._scaleDefaults().y, position: 'right', grid: { drawOnChartArea: false },
+          title: { display: true, text: 'Revenue ($)', color: CHART_COLORS.text, font: { size: 11 } },
+          ticks: { ..._scaleDefaults().y.ticks, callback: v => '$' + v } }
+      }
+    }
+  });
+}
+
+function renderChartDaysToSell() {
+  const sold = _filterByRange(DATA.items.filter(i => i.listingStatus == 5 && i.dateSold && i.dateListed), 'dateSold');
+  const rangeLabel = _getRangeLabel();
+  const el = document.getElementById('daysRangeLabel');
+  if (el) el.textContent = `${rangeLabel} — Weekly`;
+
+  // Calc days-to-sell for each item, group by week sold
+  const weeks = {};
+  sold.forEach(i => {
+    const dListed = new Date(i.dateListed + 'T00:00:00');
+    const dSold = new Date(i.dateSold + 'T00:00:00');
+    const days = Math.max(0, Math.floor((dSold - dListed) / 86400000));
+    const wk = _weekStart(i.dateSold);
+    if (!weeks[wk]) weeks[wk] = [];
+    weeks[wk].push(days);
+  });
+
+  const sortedWeeks = Object.keys(weeks).sort();
+  const labels = sortedWeeks.map(_weekLabel);
+  const avgData = sortedWeeks.map(w => {
+    const arr = weeks[w];
+    return Math.round(arr.reduce((s,d) => s + d, 0) / arr.length);
+  });
+
+  _destroyChart('chartDaysToSell');
+  if (!sortedWeeks.length) { document.getElementById('chartDaysToSell').parentElement.innerHTML = '<div class="chart-empty">No data — need listed + sold dates</div>'; return; }
+
+  _chartInstances['chartDaysToSell'] = new Chart(document.getElementById('chartDaysToSell'), {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [{
+        label: 'Avg Days to Sell',
+        data: avgData,
+        borderColor: CHART_COLORS.orange,
+        backgroundColor: 'rgba(251,146,60,0.1)',
+        pointBackgroundColor: CHART_COLORS.orange,
+        pointRadius: 4,
+        tension: 0.3,
+        fill: true
+      }]
+    },
+    options: {
+      ..._chartDefaults(),
+      plugins: { ..._chartDefaults().plugins, legend: { display: false },
+        tooltip: { ..._chartDefaults().plugins.tooltip, callbacks: { label: ctx => `${ctx.raw} days avg` } }
+      },
+      scales: {
+        x: { ..._scaleDefaults().x },
+        y: { ..._scaleDefaults().y, title: { display: true, text: 'Days', color: CHART_COLORS.text, font: { size: 11 } } }
+      }
+    }
+  });
+}
+
+function renderChartCumulative() {
+  const sold = _filterByRange(DATA.items.filter(i => i.listingStatus == 5 && i.dateSold), 'dateSold');
+  const rangeLabel = _getRangeLabel();
+  const el = document.getElementById('cumulativeRangeLabel');
+  if (el) el.textContent = rangeLabel;
+
+  // Sort by date sold
+  const sorted = [...sold].sort((a,b) => (a.dateSold||'').localeCompare(b.dateSold||''));
+
+  _destroyChart('chartCumulative');
+  if (!sorted.length) { document.getElementById('chartCumulative').parentElement.innerHTML = '<div class="chart-empty">No sales in this period</div>'; return; }
+
+  // Build cumulative data grouped by week
+  const weeks = {};
+  let cumRevenue = 0, cumProfit = 0;
+  sorted.forEach(i => {
+    const wk = _weekStart(i.dateSold);
+    cumRevenue += Number(i.salePrice) || 0;
+    cumProfit += i.grossProfit || 0;
+    weeks[wk] = { revenue: cumRevenue, profit: cumProfit };
+  });
+
+  const sortedWeeks = Object.keys(weeks).sort();
+  const labels = sortedWeeks.map(_weekLabel);
+  const revenueData = sortedWeeks.map(w => Math.round(weeks[w].revenue * 100) / 100);
+  const profitData = sortedWeeks.map(w => Math.round(weeks[w].profit * 100) / 100);
+
+  _chartInstances['chartCumulative'] = new Chart(document.getElementById('chartCumulative'), {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [
+        { label: 'Cumulative Revenue', data: revenueData, borderColor: CHART_COLORS.accent, backgroundColor: 'rgba(79,140,255,0.08)', pointBackgroundColor: CHART_COLORS.accent, pointRadius: 3, tension: 0.3, fill: true },
+        { label: 'Cumulative Profit', data: profitData, borderColor: CHART_COLORS.green, backgroundColor: 'rgba(52,211,153,0.08)', pointBackgroundColor: CHART_COLORS.green, pointRadius: 3, tension: 0.3, fill: true }
+      ]
+    },
+    options: {
+      ..._chartDefaults(),
+      scales: {
+        x: { ..._scaleDefaults().x },
+        y: { ..._scaleDefaults().y, ticks: { ..._scaleDefaults().y.ticks, callback: v => '$' + v.toLocaleString() } }
+      }
+    }
+  });
+}
+
+// ===== RENDER ALL DASHBOARD CHARTS =====
+function renderDashboardCharts() {
+  renderChartCategory();
+  renderChartCondition();
+  renderChartAging();
+  renderChartSales();
+  renderChartDaysToSell();
+  renderChartCumulative();
+}
+
 function renderDashboard() {
   DATA.items.forEach(i => calcItem(i));
   const total = DATA.items.length;
@@ -588,17 +903,7 @@ function renderDashboard() {
     <div class="stat-card"><div class="label">Total COGS</div><div class="value">${fmt(totalCost)}</div><div class="sub">Cost of sold items</div></div>
   `;
 
-  const recent = [...DATA.items].sort((a,b) => {
-    const da = a.dateSold || a.dateListed || '';
-    const db = b.dateSold || b.dateListed || '';
-    return db.localeCompare(da);
-  }).slice(0, 8);
-
-  let rhtml = '<table>' + tableHeaders(false);
-  recent.forEach(i => rhtml += itemRow(i, false));
-  rhtml += '</table>';
-  document.getElementById('recentTable').innerHTML = rhtml;
-  applyColumnWidths('recentTable');
+  renderDashboardCharts();
 }
 
 function renderAll() {
