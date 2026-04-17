@@ -669,13 +669,13 @@ const HEADER_FIELD_MAP_SHORT = HEADER_FIELD_MAP_ALL.filter(h =>
 
 // Default column widths (px) by field name
 const COL_DEFAULT_WIDTHS = {
-  sku: 65, lotId: 70, brand: 130, model: 150, category: 110, unitCost: 100,
-  powersOn: 120, coreFunction: 120, accessories: 100, missingItems: 130,
-  cosmeticGrade: 85, functionalGrade: 90, tier: 80, listedCondition: 120,
-  listingStatus: 110, listingChannel: 105, listPrice: 110, dateListed: 120,
-  salePrice: 110, soldPlatform: 105, dateSold: 115, paymentMethod: 110, platformFees: 105,
-  shippingCost: 110, otherCosts: 105, netProceeds: 110, grossProfit: 110,
-  roi: 70, msrp: 110, notes: 180
+  sku: 50, lotId: 55, brand: 100, model: 140, category: 95, unitCost: 85,
+  powersOn: 80, coreFunction: 80, accessories: 80, missingItems: 100,
+  cosmeticGrade: 80, functionalGrade: 80, tier: 65, listedCondition: 100,
+  listingStatus: 75, listingChannel: 90, listPrice: 80, dateListed: 105,
+  salePrice: 80, soldPlatform: 90, dateSold: 105, paymentMethod: 95, platformFees: 75,
+  shippingCost: 85, otherCosts: 80, netProceeds: 85, grossProfit: 85,
+  roi: 65, msrp: 80, notes: 160
 };
 
 function rth(col) {
