@@ -10,7 +10,7 @@ const ITEM_DB_TO_JS = {
   tier: 'tier', listed_condition: 'listedCondition', listing_status: 'listingStatus',
   listing_channel: 'listingChannel', list_price: 'listPrice', date_listed: 'dateListed',
   listing_channel_2: 'listingChannel2', list_price_2: 'listPrice2', date_listed_2: 'dateListed2',
-  sale_price: 'salePrice', date_sold: 'dateSold', payment_method: 'paymentMethod',
+  sale_price: 'salePrice', sold_platform: 'soldPlatform', date_sold: 'dateSold', payment_method: 'paymentMethod',
   platform_fees: 'platformFees', shipping_cost: 'shippingCost',
   other_costs: 'otherCosts', notes: 'notes'
 };
@@ -360,6 +360,7 @@ async function saveItem() {
       listPrice2: 0,
       dateListed2: null,
       salePrice: 0,
+      soldPlatform: '',
       dateSold: null,
       paymentMethod: '',
       platformFees: 0,
@@ -413,6 +414,30 @@ function updateField(sku, field, value) {
     item[field] = value;
   }
   calcItem(item);
+
+  // Auto-default soldPlatform when only one channel is listed
+  if ((field === 'listingStatus' || field === 'listingChannel' || field === 'listingChannel2') && !item.soldPlatform) {
+    const ch1 = item.listingChannel || '';
+    const ch2 = item.listingChannel2 || '';
+    const hasOne = (ch1 && !ch2) || (!ch1 && ch2);
+    if (hasOne) {
+      const autoPlatform = ch1 || ch2;
+      item.soldPlatform = autoPlatform;
+      // Update the select in the DOM if the row exists
+      const autoRow = document.querySelector(`tr[data-sku="${sku}"]`);
+      if (autoRow) {
+        const spSelect = autoRow.querySelector('select[onchange*="soldPlatform"]');
+        if (spSelect) spSelect.value = autoPlatform;
+      }
+      // Persist to DB
+      const spTimer = `${sku}_soldPlatform`;
+      clearTimeout(_updateTimers[spTimer]);
+      _updateTimers[spTimer] = setTimeout(async () => {
+        try { await supabase.update('items', `sku=eq.${sku}`, { sold_platform: autoPlatform }); }
+        catch (e) { console.error('Auto-set soldPlatform error:', e); }
+      }, 300);
+    }
+  }
 
   // Update the MSRP input to show the rounded value
   if (field === 'msrp') {
@@ -497,6 +522,7 @@ function itemRow(item, showAllCols=true) {
   html += `<td class="dual-cell money-cell"><span class="dual-money">$${makeInput(item.sku,'listPrice',item.listPrice||'','number')}</span><span class="dual-money${p2cls}">$${makeInput(item.sku,'listPrice2',item.listPrice2||'','number')}</span></td>`;
   html += `<td class="dual-cell">${makeInput(item.sku,'dateListed',item.dateListed,'date')}<input class="dl2-input${d2cls}" type="date" value="${item.dateListed2||''}" onchange="updateField(${item.sku},'dateListed2',this.value);this.classList.toggle('has-value',!!this.value)"></td>`;
   html += `<td class="money-cell">$${makeInput(item.sku,'salePrice',item.salePrice||'','number')}</td>`;
+  html += `<td>${makeSelect(item.sku,'soldPlatform',channelOptions(),item.soldPlatform||'')}</td>`;
   html += `<td>${makeInput(item.sku,'dateSold',item.dateSold,'date')}</td>`;
   html += `<td>${makeSelect(item.sku,'paymentMethod',paymentOptions(),item.paymentMethod)}</td>`;
   html += `<td class="money-cell">$${makeInput(item.sku,'platformFees',item.platformFees ?? 0,'number')}</td>`;
@@ -549,7 +575,7 @@ const HEADER_FIELD_MAP_ALL = [
   {label:'Cosmetic',field:'cosmeticGrade'},{label:'Functional',field:'functionalGrade'},
   {label:'Tier',field:'tier'},{label:'Condition',field:'listedCondition'},{label:'Status',field:'listingStatus'},
   {label:'Channel',field:'listingChannel'},{label:'List $',field:'listPrice'},{label:'Listed',field:'dateListed'},
-  {label:'Sale $',field:'salePrice'},{label:'Sold',field:'dateSold'},{label:'Payment',field:'paymentMethod'},
+  {label:'Sale $',field:'salePrice'},{label:'Sold On',field:'soldPlatform'},{label:'Sold',field:'dateSold'},{label:'Payment',field:'paymentMethod'},
   {label:'Fees',field:'platformFees'},{label:'Shipping',field:'shippingCost'},{label:'Other $',field:'otherCosts'},
   {label:'Net',field:'netProceeds'},{label:'Profit',field:'grossProfit'},{label:'ROI%',field:'roi'},
   {label:'MSRP',field:'msrp'},{label:'Notes',field:'notes'}
@@ -564,7 +590,7 @@ const COL_DEFAULT_WIDTHS = {
   powersOn: 120, coreFunction: 120, accessories: 100, missingItems: 130,
   cosmeticGrade: 85, functionalGrade: 90, tier: 80, listedCondition: 120,
   listingStatus: 110, listingChannel: 105, listPrice: 110, dateListed: 120,
-  salePrice: 110, dateSold: 115, paymentMethod: 110, platformFees: 105,
+  salePrice: 110, soldPlatform: 105, dateSold: 115, paymentMethod: 110, platformFees: 105,
   shippingCost: 110, otherCosts: 105, netProceeds: 110, grossProfit: 110,
   roi: 70, msrp: 110, notes: 180
 };
@@ -1102,12 +1128,12 @@ function exportData() {
 
 function exportCSV() {
   DATA.items.forEach(i => calcItem(i));
-  const headers = ['SKU','Lot','Brand','Model','Category','Unit Cost','Powers On','Core Function','Accessories','Missing Items','Cosmetic Grade','Functional Grade','Tier','Listed Condition','Status','Channel','List Price','Date Listed','Channel 2','List Price 2','Date Listed 2','Sale Price','Date Sold','Payment Method','Platform Fees','Shipping Cost','Other Costs','Net Proceeds','Gross Profit','ROI%','MSRP','Notes'];
+  const headers = ['SKU','Lot','Brand','Model','Category','Unit Cost','Powers On','Core Function','Accessories','Missing Items','Cosmetic Grade','Functional Grade','Tier','Listed Condition','Status','Channel','List Price','Date Listed','Channel 2','List Price 2','Date Listed 2','Sale Price','Sold Platform','Date Sold','Payment Method','Platform Fees','Shipping Cost','Other Costs','Net Proceeds','Gross Profit','ROI%','MSRP','Notes'];
   const rows = DATA.items.map(i => [
     i.sku,i.lotId,i.brand,i.model,i.category,i.unitCost,i.powersOn,i.coreFunction,i.accessories,i.missingItems,
     i.cosmeticGrade,i.functionalGrade,i.tier,i.listedCondition,statusLabel(i.listingStatus),i.listingChannel,
     i.listPrice,i.dateListed,i.listingChannel2,i.listPrice2,i.dateListed2,
-    i.salePrice,i.dateSold,i.paymentMethod,i.platformFees,i.shippingCost,i.otherCosts,
+    i.salePrice,i.soldPlatform,i.dateSold,i.paymentMethod,i.platformFees,i.shippingCost,i.otherCosts,
     i.netProceeds,i.grossProfit,i.roi,i.msrp,i.notes
   ].map(v => `"${(v==null?'':String(v)).replace(/"/g,'""')}"`).join(','));
   const csv = [headers.join(','), ...rows].join('\n');

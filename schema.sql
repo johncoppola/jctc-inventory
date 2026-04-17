@@ -42,6 +42,7 @@ CREATE TABLE items (
   list_price_2     NUMERIC(10,2) NOT NULL DEFAULT 0,
   date_listed_2    DATE,
   sale_price       NUMERIC(10,2) NOT NULL DEFAULT 0,
+  sold_platform    TEXT NOT NULL DEFAULT '',
   date_sold        DATE,
   payment_method   TEXT NOT NULL DEFAULT '',
   platform_fees    NUMERIC(10,2) NOT NULL DEFAULT 0,
@@ -96,3 +97,6 @@ CREATE POLICY "Allow all on app_config" ON app_config
 -- ALTER TABLE items ADD COLUMN listing_channel_2 TEXT NOT NULL DEFAULT '';
 -- ALTER TABLE items ADD COLUMN list_price_2 NUMERIC(10,2) NOT NULL DEFAULT 0;
 -- ALTER TABLE items ADD COLUMN date_listed_2 DATE;
+
+-- MIGRATION 2: Add sold_platform column
+-- ALTER TABLE items ADD COLUMN sold_platform TEXT NOT NULL DEFAULT '';
