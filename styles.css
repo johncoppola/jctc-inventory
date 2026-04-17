@@ -142,10 +142,10 @@ td select.tier-select-3 { color: var(--red); font-weight: 600; }
 .chart-card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 16px; }
 .chart-title { font-size: 13px; font-weight: 600; color: var(--text); margin-bottom: 12px; }
 .chart-subtitle { font-size: 11px; font-weight: 400; color: var(--text-dim); margin-left: 8px; }
-.chart-container { position: relative; width: 100%; }
-.donut-container { max-width: 320px; margin: 0 auto; }
+.chart-container { position: relative; width: 100%; height: 280px; }
+.donut-container { max-width: 320px; margin: 0 auto; height: 260px; }
 .bar-container { height: 220px; }
-.chart-container canvas { width: 100% !important; }
+.chart-container canvas { width: 100% !important; height: 100% !important; }
 .chart-empty { display: flex; align-items: center; justify-content: center; height: 180px; color: var(--text-dim); font-size: 13px; }
 
 /* Toast notification */

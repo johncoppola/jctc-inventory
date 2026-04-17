@@ -625,7 +625,7 @@ const CHART_COLORS = {
 function _chartDefaults() {
   return {
     responsive: true,
-    maintainAspectRatio: true,
+    maintainAspectRatio: false,
     plugins: {
       legend: { labels: { color: CHART_COLORS.text, font: { size: 11 }, padding: 12, usePointStyle: true, pointStyleWidth: 8 } },
       tooltip: { backgroundColor: '#1a1d27', titleColor: '#e4e7ef', bodyColor: '#e4e7ef', borderColor: '#2e3347', borderWidth: 1, padding: 10, cornerRadius: 6, titleFont: { size: 12 }, bodyFont: { size: 12 } }
@@ -870,6 +870,7 @@ function renderChartCumulative() {
 
 // ===== RENDER ALL DASHBOARD CHARTS =====
 function renderDashboardCharts() {
+  if (typeof Chart === 'undefined') { console.warn('Chart.js not loaded yet'); return; }
   renderChartCategory();
   renderChartCondition();
   renderChartAging();
