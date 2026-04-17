@@ -57,6 +57,11 @@ body.col-resizing { cursor: col-resize !important; user-select: none !important;
 body.col-resizing th, body.col-resizing td, body.col-resizing tr { cursor: col-resize !important; }
 body.col-resizing .col-resize.active { background: var(--accent); width: 3px; right: -1px; }
 td { padding: 8px 12px; border-top: 1px solid var(--border); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* Freeze SKU column (first column) when scrolling horizontally */
+th:first-child { position: sticky; left: 0; z-index: 4; }
+td:first-child { position: sticky; left: 0; z-index: 1; background: var(--bg); }
+tr:hover td:first-child { background: #141722; }
+td:first-child::after, th:first-child::after { content: ''; position: absolute; right: 0; top: 0; bottom: 0; width: 1px; background: var(--border); }
 tr:hover { background: rgba(79,140,255,.04); }
 td input, td select { background: transparent; border: 1px solid transparent; color: var(--text); padding: 4px 6px; border-radius: 4px; font-size: 13px; width: 100%; min-width: 60px; }
 td input:focus, td select:focus { border-color: var(--accent); outline: none; background: var(--surface2); }

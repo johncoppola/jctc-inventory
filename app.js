@@ -102,8 +102,8 @@ function calcItem(item) {
 }
 
 function statusLabel(s) {
-  const labels = {1:'Not Listed',2:'Listed',3:'Pending Sale',4:'Shipped',5:'Sold'};
-  return labels[s] || 'Unknown';
+  const match = DROPDOWN_OPTIONS.listingStatus.find(o => o.value == s);
+  return match ? match.label : 'Unknown';
 }
 
 // ===== CUSTOMIZABLE DROPDOWN OPTIONS =====
@@ -122,15 +122,15 @@ const DROPDOWN_OPTIONS = {
   paymentMethod:   ['','Cash','Venmo','CashApp','Zelle','PayPal','Credit Card','Cash & Venmo','Other']
 };
 
-// Which dropdown fields are editable via right-click (exclude listingStatus — it has special value/label pairs)
-const EDITABLE_DROPDOWNS = ['category','powersOn','coreFunction','accessories','cosmeticGrade','functionalGrade','tier','listedCondition','listingChannel','paymentMethod'];
+// Which dropdown fields are editable via right-click
+const EDITABLE_DROPDOWNS = ['category','powersOn','coreFunction','accessories','cosmeticGrade','functionalGrade','tier','listedCondition','listingStatus','listingChannel','paymentMethod'];
 
 // Friendly labels for the editor modal
 const DROPDOWN_LABELS = {
   category: 'Category', powersOn: 'Powers On', coreFunction: 'Core Function',
   accessories: 'Accessories', cosmeticGrade: 'Cosmetic Grade', functionalGrade: 'Functional Grade',
-  tier: 'Tier', listedCondition: 'Listed Condition', listingChannel: 'Listing Channel',
-  paymentMethod: 'Payment Method'
+  tier: 'Tier', listedCondition: 'Listed Condition', listingStatus: 'Status',
+  listingChannel: 'Listing Channel', paymentMethod: 'Payment Method'
 };
 
 // Map header field names to their dropdown key
@@ -152,7 +152,7 @@ async function loadDropdownOptions() {
     if (rows.length && rows[0].value) {
       const saved = JSON.parse(rows[0].value);
       for (const [key, opts] of Object.entries(saved)) {
-        if (DROPDOWN_OPTIONS[key] && key !== 'listingStatus') {
+        if (DROPDOWN_OPTIONS[key]) {
           DROPDOWN_OPTIONS[key] = opts;
         }
       }
@@ -165,7 +165,7 @@ async function loadDropdownOptions() {
 // Save dropdown options to Supabase
 async function saveDropdownOptions() {
   try {
-    // Only save editable dropdowns (not listingStatus)
+    // Save all editable dropdowns
     const toSave = {};
     for (const key of EDITABLE_DROPDOWNS) {
       toSave[key] = DROPDOWN_OPTIONS[key];
@@ -448,10 +448,6 @@ function itemRow(item, showAllCols=true) {
   html += `<td>${makeSelect(item.sku,'category',DROPDOWN_OPTIONS.category,item.category)}</td>`;
   html += `<td class="calc-cell" data-field="unitCost">${fmt(item.unitCost)}</td>`;
   if (showAllCols) {
-    html += `<td>${makeSelect(item.sku,'powersOn',DROPDOWN_OPTIONS.powersOn,item.powersOn)}</td>`;
-    html += `<td>${makeSelect(item.sku,'coreFunction',DROPDOWN_OPTIONS.coreFunction,item.coreFunction)}</td>`;
-    html += `<td>${makeSelect(item.sku,'accessories',DROPDOWN_OPTIONS.accessories,item.accessories)}</td>`;
-    html += `<td>${makeInput(item.sku,'missingItems',item.missingItems)}</td>`;
     html += `<td>${makeSelect(item.sku,'cosmeticGrade',DROPDOWN_OPTIONS.cosmeticGrade,item.cosmeticGrade)}</td>`;
     html += `<td>${makeSelect(item.sku,'functionalGrade',DROPDOWN_OPTIONS.functionalGrade,item.functionalGrade)}</td>`;
   }
@@ -487,8 +483,7 @@ let currentSortDir = 'asc';
 const HEADER_FIELD_MAP_ALL = [
   {label:'SKU',field:'sku'},{label:'Lot',field:'lotId'},{label:'Brand',field:'brand'},{label:'Model',field:'model'},
   {label:'Category',field:'category'},{label:'Unit Cost',field:'unitCost'},
-  {label:'Powers On',field:'powersOn'},{label:'Core Fn',field:'coreFunction'},{label:'Accessories',field:'accessories'},
-  {label:'Missing',field:'missingItems'},{label:'Cosmetic',field:'cosmeticGrade'},{label:'Functional',field:'functionalGrade'},
+  {label:'Cosmetic',field:'cosmeticGrade'},{label:'Functional',field:'functionalGrade'},
   {label:'Tier',field:'tier'},{label:'Condition',field:'listedCondition'},{label:'Status',field:'listingStatus'},
   {label:'Channel',field:'listingChannel'},{label:'List $',field:'listPrice'},{label:'Listed',field:'dateListed'},
   {label:'Sale $',field:'salePrice'},{label:'Sold',field:'dateSold'},{label:'Payment',field:'paymentMethod'},
@@ -898,9 +893,19 @@ document.addEventListener('contextmenu', function(e) {
   openDropdownEditor(field);
 });
 
+function _isValueLabelList() {
+  return _editingDropdownField === 'listingStatus';
+}
+
+function _getOptLabel(opt) {
+  if (typeof opt === 'object' && opt.label != null) return opt.label;
+  return opt;
+}
+
 function openDropdownEditor(field) {
   _editingDropdownField = field;
-  _editingDropdownOptions = [...DROPDOWN_OPTIONS[field]];
+  // Deep copy for value/label objects
+  _editingDropdownOptions = DROPDOWN_OPTIONS[field].map(o => typeof o === 'object' ? {...o} : o);
   document.getElementById('dropdownModalTitle').textContent = 'Edit ' + DROPDOWN_LABELS[field] + ' Options';
   document.getElementById('dropdownNewOption').value = '';
   renderDropdownEditorList();
@@ -915,14 +920,17 @@ function closeDropdownModal() {
 
 function renderDropdownEditorList() {
   const container = document.getElementById('dropdownOptionsList');
+  const isVL = _isValueLabelList();
   container.innerHTML = _editingDropdownOptions.map((opt, i) => {
-    const isBlank = opt === '';
-    const label = isBlank ? '(blank)' : opt;
+    const label = _getOptLabel(opt);
+    const isBlank = label === '';
+    const displayLabel = isBlank ? '(blank)' : label;
     const labelClass = isBlank ? 'opt-label empty-opt' : 'opt-label';
+    const valueTag = isVL ? `<span style="color:var(--text-dim);font-size:11px;margin-left:4px">[${opt.value}]</span>` : '';
     return `<div class="dropdown-opt-item" draggable="true" data-idx="${i}"
       ondragstart="ddDragStart(event)" ondragover="ddDragOver(event)" ondragleave="ddDragLeave(event)" ondrop="ddDrop(event)">
       <span class="opt-drag">⠿</span>
-      <span class="${labelClass}">${label}</span>
+      <span class="${labelClass}">${displayLabel}${valueTag}</span>
       <button class="opt-remove" onclick="removeDropdownOption(${i})" title="Remove">&times;</button>
     </div>`;
   }).join('');
@@ -932,8 +940,16 @@ function addDropdownOption() {
   const input = document.getElementById('dropdownNewOption');
   const val = input.value.trim();
   if (!val) return;
-  if (_editingDropdownOptions.includes(val)) { toast('Option already exists'); return; }
-  _editingDropdownOptions.push(val);
+  if (_isValueLabelList()) {
+    // Check if label already exists
+    if (_editingDropdownOptions.some(o => o.label === val)) { toast('Option already exists'); return; }
+    // Auto-assign next numeric value
+    const maxVal = _editingDropdownOptions.reduce((m, o) => Math.max(m, o.value || 0), 0);
+    _editingDropdownOptions.push({ value: maxVal + 1, label: val });
+  } else {
+    if (_editingDropdownOptions.includes(val)) { toast('Option already exists'); return; }
+    _editingDropdownOptions.push(val);
+  }
   input.value = '';
   renderDropdownEditorList();
 }
@@ -977,7 +993,8 @@ function ddDrop(e) {
 
 async function saveDropdownChanges() {
   if (!_editingDropdownField) return;
-  DROPDOWN_OPTIONS[_editingDropdownField] = [..._editingDropdownOptions];
+  // Deep copy for value/label objects
+  DROPDOWN_OPTIONS[_editingDropdownField] = _editingDropdownOptions.map(o => typeof o === 'object' ? {...o} : o);
   await saveDropdownOptions();
   closeDropdownModal();
   updateCategorySelect();
