@@ -223,9 +223,18 @@ function getListingAgeDays(item) {
   return Math.floor((today - new Date(oldest + 'T00:00:00')) / 86400000);
 }
 
+// Status helpers — centralized so dropdown changes only need to be updated here.
+// LISTED = items currently on a marketplace (Partially Listed or Fully Listed).
+// SOLD = item has sold. Other statuses (Not Listed, Drafted, Pending) are not "listed".
+const LISTED_STATUSES = [7, 8];
+const SOLD_STATUS = 5;
+function isListed(item)  { return LISTED_STATUSES.includes(Number(item.listingStatus)); }
+function isSold(item)    { return Number(item.listingStatus) === SOLD_STATUS; }
+function isOpen(item)    { return Number(item.listingStatus) !== SOLD_STATUS; }
+
 // Returns 'danger' (30+), 'warning' (21-29), or '' based on listing age.
 function getAgingClass(item) {
-  if (item.listingStatus != 2) return '';
+  if (!isListed(item)) return '';
   const days = getListingAgeDays(item);
   if (days == null) return '';
   if (days >= 30) return 'age-danger';
@@ -634,7 +643,7 @@ function setStaleFilter(val) {
 
 // Update stale count badges on the filter buttons
 function updateStaleBadges() {
-  const listed = DATA.items.filter(i => i.listingStatus == 2);
+  const listed = DATA.items.filter(isListed);
   const warning = listed.filter(i => { const d = getListingAgeDays(i); return d != null && d >= 21; }).length;
   const danger = listed.filter(i => { const d = getListingAgeDays(i); return d != null && d >= 30; }).length;
   document.querySelectorAll('.stale-btn').forEach(b => {
@@ -1062,9 +1071,9 @@ function renderDashboardCharts() {
 function renderDashboard() {
   DATA.items.forEach(i => calcItem(i));
   const total = DATA.items.length;
-  const sold = DATA.items.filter(i => i.listingStatus == 5);
-  const open = DATA.items.filter(i => i.listingStatus != 5);
-  const listed = DATA.items.filter(i => i.listingStatus == 2);
+  const sold = DATA.items.filter(isSold);
+  const open = DATA.items.filter(isOpen);
+  const listed = DATA.items.filter(isListed);
   const totalRevenue = sold.reduce((s,i) => s + (Number(i.salePrice)||0), 0);
   const totalCost = sold.reduce((s,i) => s + (i.unitCost||0), 0);
   const totalFees = sold.reduce((s,i) => s + (Number(i.platformFees)||0) + (Number(i.shippingCost)||0) + (Number(i.otherCosts)||0), 0);
@@ -1117,12 +1126,12 @@ function renderOpen() {
   if (_staleFilter === 'warning') {
     items = items.filter(i => {
       const d = getListingAgeDays(i);
-      return i.listingStatus == 2 && d != null && d >= 21;
+      return isListed(i) && d != null && d >= 21;
     });
   } else if (_staleFilter === 'danger') {
     items = items.filter(i => {
       const d = getListingAgeDays(i);
-      return i.listingStatus == 2 && d != null && d >= 30;
+      return isListed(i) && d != null && d >= 30;
     });
   }
 
