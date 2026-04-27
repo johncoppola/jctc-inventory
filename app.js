@@ -863,7 +863,7 @@ let currentSortField = null;
 let currentSortDir = 'asc';
 
 const HEADER_FIELD_MAP_ALL = [
-  {label:'SKU',field:'sku'},{label:'Lot',field:'lotId'},{label:'BStock #',field:'bstockItemCode'},
+  {label:'SKU',field:'sku'},{label:'Lot',field:'lotId'},{label:'Item #',field:'bstockItemCode'},
   {label:'Brand',field:'brand'},{label:'Model',field:'model'},
   {label:'Category',field:'category'},{label:'Unit Cost',field:'unitCost'},
   {label:'Cosmetic',field:'cosmeticGrade'},{label:'Functional',field:'functionalGrade'},
@@ -1424,7 +1424,7 @@ function exportCSV() {
   DATA.items.forEach(i => calcItem(i));
   // Determine max listings across all items for dynamic columns
   const maxListings = Math.max(1, ...DATA.items.map(i => (i.listings || []).length));
-  const baseHeaders = ['SKU','Lot','BStock #','Brand','Model','Category','Unit Cost','Powers On','Core Function','Accessories','Missing Items','Cosmetic Grade','Functional Grade','Tier','Listed Condition','Status'];
+  const baseHeaders = ['SKU','Lot','Item #','Brand','Model','Category','Unit Cost','Powers On','Core Function','Accessories','Missing Items','Cosmetic Grade','Functional Grade','Tier','Listed Condition','Status'];
   const listingHeaders = [];
   for (let n = 1; n <= maxListings; n++) {
     const suffix = maxListings > 1 ? ` ${n}` : '';
