@@ -22,6 +22,7 @@ CREATE TABLE lots (
 CREATE TABLE items (
   sku              INTEGER PRIMARY KEY,
   lot_id           INTEGER NOT NULL REFERENCES lots(id),
+  bstock_item_code TEXT NOT NULL DEFAULT '',  -- "Item #" from BStock manifest; shared by all units of one manifest line
   category         TEXT NOT NULL DEFAULT '',
   brand            TEXT NOT NULL DEFAULT '',
   model            TEXT NOT NULL DEFAULT '',
@@ -129,3 +130,4 @@ CREATE POLICY "Allow all on status_history" ON status_history
 -- Migration 3: listings JSONB column (replaces listing_channel/list_price/date_listed pairs)
 -- Migration 4: listing_status converted INTEGER -> TEXT (Not Listed/Drafted/Listed/Pending/Sold)
 -- Migration 5: price_history + status_history tables, seeded from current items
+-- Migration 6: items.bstock_item_code TEXT NOT NULL DEFAULT '' + indexed; backfilled lots 2 & 3 from manifests

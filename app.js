@@ -3,7 +3,8 @@ let DATA = { lots: [], items: [], nextSKU: 1 };
 
 // ===== FIELD MAPPING: DB (snake_case) ↔ JS (camelCase) =====
 const ITEM_DB_TO_JS = {
-  sku: 'sku', lot_id: 'lotId', category: 'category', brand: 'brand', model: 'model',
+  sku: 'sku', lot_id: 'lotId', bstock_item_code: 'bstockItemCode',
+  category: 'category', brand: 'brand', model: 'model',
   msrp: 'msrp', powers_on: 'powersOn', core_function: 'coreFunction',
   accessories: 'accessories', missing_items: 'missingItems',
   cosmetic_grade: 'cosmeticGrade', functional_grade: 'functionalGrade',
@@ -615,7 +616,7 @@ function showItemModal() {
   if (!DATA.lots.length) { alert('Add a lot first before adding items.'); return; }
   const sel = document.getElementById('itemLot');
   sel.innerHTML = DATA.lots.map(l => `<option value="${l.id}">Lot ${l.id}</option>`).join('');
-  ['itemBrand','itemModel','itemMissing','itemNotes'].forEach(id => document.getElementById(id).value = '');
+  ['itemBstockCode','itemBrand','itemModel','itemMissing','itemNotes'].forEach(id => document.getElementById(id).value = '');
   document.getElementById('itemMSRP').value = '';
   populateModalSelect('itemCategory', DROPDOWN_OPTIONS.category, DROPDOWN_OPTIONS.category[0]);
   populateModalSelect('itemPowers', DROPDOWN_OPTIONS.powersOn, 'Not Tested (Sealed)');
@@ -634,6 +635,7 @@ async function saveItem() {
     const item = {
       sku,
       lotId: Number(document.getElementById('itemLot').value),
+      bstockItemCode: document.getElementById('itemBstockCode').value.trim(),
       category: document.getElementById('itemCategory').value,
       brand: document.getElementById('itemBrand').value,
       model: document.getElementById('itemModel').value,
@@ -775,6 +777,7 @@ function itemRow(item, showAllCols=true) {
   let html = `<tr data-sku="${item.sku}" class="${ageCls}">`;
   html += `<td>${item.sku}</td>`;
   html += `<td>Lot ${item.lotId}</td>`;
+  html += `<td>${makeInput(item.sku,'bstockItemCode',item.bstockItemCode || '')}</td>`;
   html += `<td>${makeInput(item.sku,'brand',item.brand)}</td>`;
   html += `<td>${makeInput(item.sku,'model',item.model)}</td>`;
   html += `<td>${makeSelect(item.sku,'category',DROPDOWN_OPTIONS.category,item.category)}</td>`;
@@ -860,7 +863,8 @@ let currentSortField = null;
 let currentSortDir = 'asc';
 
 const HEADER_FIELD_MAP_ALL = [
-  {label:'SKU',field:'sku'},{label:'Lot',field:'lotId'},{label:'Brand',field:'brand'},{label:'Model',field:'model'},
+  {label:'SKU',field:'sku'},{label:'Lot',field:'lotId'},{label:'BStock #',field:'bstockItemCode'},
+  {label:'Brand',field:'brand'},{label:'Model',field:'model'},
   {label:'Category',field:'category'},{label:'Unit Cost',field:'unitCost'},
   {label:'Cosmetic',field:'cosmeticGrade'},{label:'Functional',field:'functionalGrade'},
   {label:'Tier',field:'tier'},{label:'Condition',field:'listedCondition'},{label:'Status',field:'listingStatus'},
@@ -876,7 +880,7 @@ const HEADER_FIELD_MAP_SHORT = HEADER_FIELD_MAP_ALL.filter(h =>
 
 // Default column widths (px) by field name
 const COL_DEFAULT_WIDTHS = {
-  sku: 75, lotId: 80, brand: 155, model: 200, category: 140, unitCost: 120,
+  sku: 75, lotId: 80, bstockItemCode: 100, brand: 155, model: 200, category: 140, unitCost: 120,
   powersOn: 120, coreFunction: 140, accessories: 130, missingItems: 155,
   cosmeticGrade: 125, functionalGrade: 140, tier: 95, listedCondition: 140,
   listingStatus: 110, listingChannel: 125, listPrice: 110, dateListed: 135,
@@ -942,7 +946,7 @@ function filterItems(items, search, lotFilter) {
   if (lotFilter) items = items.filter(i => i.lotId == lotFilter);
   if (search) {
     const s = search.toLowerCase();
-    items = items.filter(i => (i.brand||'').toLowerCase().includes(s) || (i.model||'').toLowerCase().includes(s) || String(i.sku).includes(s));
+    items = items.filter(i => (i.brand||'').toLowerCase().includes(s) || (i.model||'').toLowerCase().includes(s) || String(i.sku).includes(s) || (i.bstockItemCode||'').toLowerCase().includes(s));
   }
   return items;
 }
@@ -1420,7 +1424,7 @@ function exportCSV() {
   DATA.items.forEach(i => calcItem(i));
   // Determine max listings across all items for dynamic columns
   const maxListings = Math.max(1, ...DATA.items.map(i => (i.listings || []).length));
-  const baseHeaders = ['SKU','Lot','Brand','Model','Category','Unit Cost','Powers On','Core Function','Accessories','Missing Items','Cosmetic Grade','Functional Grade','Tier','Listed Condition','Status'];
+  const baseHeaders = ['SKU','Lot','BStock #','Brand','Model','Category','Unit Cost','Powers On','Core Function','Accessories','Missing Items','Cosmetic Grade','Functional Grade','Tier','Listed Condition','Status'];
   const listingHeaders = [];
   for (let n = 1; n <= maxListings; n++) {
     const suffix = maxListings > 1 ? ` ${n}` : '';
@@ -1429,7 +1433,7 @@ function exportCSV() {
   const tailHeaders = ['Sale Price','Sold Platform','Date Sold','Payment Method','Platform Fees','Shipping Cost','Other Costs','Net Proceeds','Gross Profit','ROI%','MSRP','Notes'];
   const headers = [...baseHeaders, ...listingHeaders, ...tailHeaders];
   const rows = DATA.items.map(i => {
-    const base = [i.sku,i.lotId,i.brand,i.model,i.category,i.unitCost,i.powersOn,i.coreFunction,i.accessories,i.missingItems,
+    const base = [i.sku,i.lotId,i.bstockItemCode||'',i.brand,i.model,i.category,i.unitCost,i.powersOn,i.coreFunction,i.accessories,i.missingItems,
       i.cosmeticGrade,i.functionalGrade,i.tier,i.listedCondition,statusLabel(i.listingStatus)];
     const listingCols = [];
     for (let n = 0; n < maxListings; n++) {
