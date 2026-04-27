@@ -34,7 +34,7 @@ CREATE TABLE items (
   functional_grade TEXT NOT NULL DEFAULT 'A (Sealed)',
   tier             TEXT NOT NULL DEFAULT 'Tier 1',
   listed_condition TEXT NOT NULL DEFAULT '',
-  listing_status   INTEGER NOT NULL DEFAULT 1,
+  listing_status   TEXT NOT NULL DEFAULT 'Not Listed',
   listing_channel  TEXT NOT NULL DEFAULT '',   -- legacy (kept for backward compat)
   list_price       NUMERIC(10,2) NOT NULL DEFAULT 0,   -- legacy
   date_listed      DATE,                               -- legacy
@@ -90,33 +90,42 @@ CREATE POLICY "Allow all on items" ON items
 CREATE POLICY "Allow all on app_config" ON app_config
   FOR ALL USING (true) WITH CHECK (true);
 
+-- 6. PRICE HISTORY — one row per channel price change.
+--    Current price on items.listings (jsonb) remains the source of truth for "current".
+CREATE TABLE price_history (
+  id          BIGSERIAL PRIMARY KEY,
+  item_sku    INTEGER NOT NULL REFERENCES items(sku) ON DELETE CASCADE,
+  channel     TEXT NOT NULL DEFAULT '',
+  price       NUMERIC(10,2) NOT NULL,
+  changed_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  source      TEXT NOT NULL DEFAULT 'manual'  -- 'seed' | 'manual' | 'reprice' | etc.
+);
+CREATE INDEX price_history_item_changed_idx
+  ON price_history (item_sku, channel, changed_at DESC);
+ALTER TABLE price_history ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Allow all on price_history" ON price_history
+  FOR ALL USING (true) WITH CHECK (true);
+
+-- 7. STATUS HISTORY — one row per status change.
+--    Required for pause/resume repricing logic (chunk #6).
+CREATE TABLE status_history (
+  id          BIGSERIAL PRIMARY KEY,
+  item_sku    INTEGER NOT NULL REFERENCES items(sku) ON DELETE CASCADE,
+  status      TEXT NOT NULL,
+  changed_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  source      TEXT NOT NULL DEFAULT 'manual'  -- 'seed' | 'initial' | 'manual'
+);
+CREATE INDEX status_history_item_changed_idx
+  ON status_history (item_sku, changed_at DESC);
+ALTER TABLE status_history ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Allow all on status_history" ON status_history
+  FOR ALL USING (true) WITH CHECK (true);
+
 -- =====================================================
 -- MIGRATION HISTORY (already applied — DO NOT re-run)
 -- =====================================================
 -- Migration 1: listing_channel_2, list_price_2, date_listed_2
 -- Migration 2: sold_platform
-
--- =====================================================
--- MIGRATION 3: Flexible listings JSONB column
--- Run this in the Supabase SQL Editor (one time).
--- =====================================================
--- Step 1: Add the new column
--- ALTER TABLE items ADD COLUMN listings JSONB NOT NULL DEFAULT '[]';
---
--- Step 2: Migrate existing data from legacy columns into listings
--- UPDATE items SET listings =
---   CASE
---     WHEN (listing_channel != '' OR list_price > 0 OR date_listed IS NOT NULL) THEN
---       CASE
---         WHEN (listing_channel_2 != '' OR list_price_2 > 0 OR date_listed_2 IS NOT NULL) THEN
---           jsonb_build_array(
---             jsonb_build_object('channel', listing_channel, 'price', list_price, 'dateListed', date_listed),
---             jsonb_build_object('channel', listing_channel_2, 'price', list_price_2, 'dateListed', date_listed_2)
---           )
---         ELSE
---           jsonb_build_array(
---             jsonb_build_object('channel', listing_channel, 'price', list_price, 'dateListed', date_listed)
---           )
---       END
---     ELSE '[]'::jsonb
---   END;
+-- Migration 3: listings JSONB column (replaces listing_channel/list_price/date_listed pairs)
+-- Migration 4: listing_status converted INTEGER -> TEXT (Not Listed/Drafted/Listed/Pending/Sold)
+-- Migration 5: price_history + status_history tables, seeded from current items

@@ -91,11 +91,11 @@
       <select id="filterLot" onchange="renderAll()"><option value="">All Lots</option></select>
       <select id="filterStatus" onchange="renderAll()">
         <option value="">All Statuses</option>
-        <option value="1">Not Listed</option>
-        <option value="2">Listed</option>
-        <option value="3">Pending Sale</option>
-        <option value="4">Shipped</option>
-        <option value="5">Sold</option>
+        <option value="Not Listed">Not Listed</option>
+        <option value="Drafted">Drafted</option>
+        <option value="Listed">Listed</option>
+        <option value="Pending">Pending</option>
+        <option value="Sold">Sold</option>
       </select>
       <select id="filterTier" onchange="renderAll()">
         <option value="">All Tiers</option>
@@ -114,7 +114,7 @@
       <select id="filterOpenLot" onchange="renderOpen()"><option value="">All Lots</option></select>
       <div class="stale-filter-group">
         <button class="stale-btn active" data-stale="all" onclick="setStaleFilter('all')">All</button>
-        <button class="stale-btn" data-stale="warning" onclick="setStaleFilter('warning')">21+ Days</button>
+        <button class="stale-btn" data-stale="warning" onclick="setStaleFilter('warning')">15+ Days</button>
         <button class="stale-btn" data-stale="danger" onclick="setStaleFilter('danger')">30+ Days</button>
       </div>
     </div>

@@ -58,6 +58,7 @@ async function loadData() {
       buildListings(i);
       calcItem(i);
     });
+    _snapshotAll();
   } catch (err) {
     console.error('Failed to load data from Supabase:', err);
     toast('Error loading data — check console');
@@ -109,8 +110,8 @@ function calcItem(item) {
 }
 
 function statusLabel(s) {
-  const match = DROPDOWN_OPTIONS.listingStatus.find(o => o.value == s);
-  return match ? match.label : 'Unknown';
+  // Statuses are now plain strings — pass through unless empty.
+  return s || 'Unknown';
 }
 
 // ===== LISTINGS ARRAY MANAGEMENT =====
@@ -184,8 +185,11 @@ function saveListings(sku) {
   const timerKey = `${sku}_listings`;
   clearTimeout(_updateTimers[timerKey]);
   _updateTimers[timerKey] = setTimeout(async () => {
+    const oldListings = _snapshotListings[sku] || [];
     try {
       await supabase.update('items', `sku=eq.${sku}`, { listings: item.listings });
+      await logPriceChanges(sku, oldListings, item.listings);
+      _snapshotItem(item);
     } catch (err) {
       console.error(`saveListings(${sku}) error:`, err);
       toast('Error saving listings — check console');
@@ -213,6 +217,147 @@ function autoDefaultSoldPlatform(sku) {
   }, 300);
 }
 
+// ===== HISTORY LOGGING (price + status) =====
+// Snapshots of last-saved values used to diff for history rows.
+const _snapshotListings = {}; // sku -> [{channel, price, dateListed}]
+const _snapshotStatus = {};   // sku -> 'Listed' etc.
+
+function _snapshotItem(item) {
+  _snapshotListings[item.sku] = (item.listings || []).map(l => ({
+    channel: l.channel || '',
+    price: Number(l.price) || 0,
+    dateListed: l.dateListed || ''
+  }));
+  _snapshotStatus[item.sku] = item.listingStatus;
+}
+
+function _snapshotAll() {
+  DATA.items.forEach(_snapshotItem);
+}
+
+// Diff old vs new listings by index. Insert one price_history row per channel
+// whose price changed to a non-zero value.
+async function logPriceChanges(sku, oldListings, newListings) {
+  const rows = [];
+  newListings.forEach((nl, idx) => {
+    const ol = oldListings[idx];
+    const oldPrice = ol ? Number(ol.price) || 0 : 0;
+    const newPrice = Number(nl.price) || 0;
+    if (newPrice > 0 && newPrice !== oldPrice) {
+      rows.push({
+        item_sku: sku,
+        channel: nl.channel || '',
+        price: newPrice,
+        source: 'manual'
+      });
+    }
+  });
+  if (!rows.length) return;
+  try { await supabase.insert('price_history', rows); }
+  catch (e) { console.error('price_history insert failed:', e); }
+}
+
+async function logStatusChange(sku, oldStatus, newStatus) {
+  if (oldStatus === newStatus || !newStatus) return;
+  try {
+    await supabase.insert('status_history', [{
+      item_sku: sku,
+      status: newStatus,
+      source: 'manual'
+    }]);
+  } catch (e) { console.error('status_history insert failed:', e); }
+}
+
+// ===== HISTORY POPOVER =====
+let _historyPopover = null;
+
+function _ensureHistoryPopover() {
+  if (_historyPopover) return _historyPopover;
+  const el = document.createElement('div');
+  el.className = 'history-popover';
+  el.style.display = 'none';
+  document.body.appendChild(el);
+  _historyPopover = el;
+  document.addEventListener('mousedown', (e) => {
+    if (!_historyPopover || _historyPopover.style.display === 'none') return;
+    if (e.target.closest('.history-icon')) return;
+    if (!_historyPopover.contains(e.target)) hideHistoryPopover();
+  });
+  return el;
+}
+
+function hideHistoryPopover() {
+  if (_historyPopover) _historyPopover.style.display = 'none';
+}
+
+function _formatHistoryWhen(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (isNaN(d)) return iso;
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+function _showHistoryPopover(title, entries, anchor) {
+  const el = _ensureHistoryPopover();
+  let html = `<div class="history-popover-title">${title}</div>`;
+  if (!entries.length) {
+    html += '<div class="history-popover-empty">No history yet</div>';
+  } else {
+    html += '<div class="history-popover-list">';
+    entries.forEach(e => {
+      const seedTag = e.source === 'seed' ? '<span class="history-popover-seed" title="Initial seed entry — true historical date is unknown">seed</span>' : '';
+      html += `<div class="history-popover-entry"><span class="history-popover-when">${_formatHistoryWhen(e.when)}</span><span class="history-popover-value">${e.label}</span>${seedTag}</div>`;
+    });
+    html += '</div>';
+  }
+  el.innerHTML = html;
+  el.style.display = 'block';
+  // Position below the anchor; flip above if it would overflow viewport.
+  const rect = anchor.getBoundingClientRect();
+  const popH = el.offsetHeight;
+  const popW = el.offsetWidth;
+  let top = rect.bottom + window.scrollY + 4;
+  let left = rect.left + window.scrollX;
+  if (left + popW > window.scrollX + window.innerWidth - 8) {
+    left = window.scrollX + window.innerWidth - popW - 8;
+  }
+  if (rect.bottom + popH > window.innerHeight - 8) {
+    top = rect.top + window.scrollY - popH - 4;
+  }
+  el.style.top = top + 'px';
+  el.style.left = Math.max(8, left) + 'px';
+}
+
+async function showPriceHistory(sku, channel, anchor) {
+  try {
+    const data = await supabase.select('price_history',
+      `item_sku=eq.${sku}&channel=eq.${encodeURIComponent(channel)}&order=changed_at.desc&limit=20`);
+    _showHistoryPopover(
+      `${channel || '(no channel)'} — Price History`,
+      data.map(r => ({ when: r.changed_at, label: '$' + Number(r.price).toFixed(2), source: r.source })),
+      anchor
+    );
+  } catch (e) {
+    console.error('showPriceHistory failed:', e);
+    toast('Error loading price history');
+  }
+}
+
+async function showStatusHistory(sku, anchor) {
+  try {
+    const data = await supabase.select('status_history',
+      `item_sku=eq.${sku}&order=changed_at.desc&limit=20`);
+    _showHistoryPopover(
+      'Status History',
+      data.map(r => ({ when: r.changed_at, label: r.status, source: r.source })),
+      anchor
+    );
+  } catch (e) {
+    console.error('showStatusHistory failed:', e);
+    toast('Error loading status history');
+  }
+}
+
 // ===== LISTING AGE HELPERS =====
 // Returns the number of days since the oldest active listing date.
 function getListingAgeDays(item) {
@@ -223,22 +368,20 @@ function getListingAgeDays(item) {
   return Math.floor((today - new Date(oldest + 'T00:00:00')) / 86400000);
 }
 
-// Status helpers — centralized so dropdown changes only need to be updated here.
-// LISTED = items currently on a marketplace (Partially Listed or Fully Listed).
-// SOLD = item has sold. Other statuses (Not Listed, Drafted, Pending) are not "listed".
-const LISTED_STATUSES = [7, 8];
-const SOLD_STATUS = 5;
-function isListed(item)  { return LISTED_STATUSES.includes(Number(item.listingStatus)); }
-function isSold(item)    { return Number(item.listingStatus) === SOLD_STATUS; }
-function isOpen(item)    { return Number(item.listingStatus) !== SOLD_STATUS; }
+// Status helpers. Pending and Drafted are NOT "listed" — they pause the repricing clock.
+const LISTED_STATUS = 'Listed';
+const SOLD_STATUS = 'Sold';
+function isListed(item)  { return item.listingStatus === LISTED_STATUS; }
+function isSold(item)    { return item.listingStatus === SOLD_STATUS; }
+function isOpen(item)    { return item.listingStatus !== SOLD_STATUS; }
 
-// Returns 'danger' (30+), 'warning' (21-29), or '' based on listing age.
+// Returns 'danger' (30+), 'warning' (15-29), or '' based on listing age.
 function getAgingClass(item) {
   if (!isListed(item)) return '';
   const days = getListingAgeDays(item);
   if (days == null) return '';
   if (days >= 30) return 'age-danger';
-  if (days >= 21) return 'age-warning';
+  if (days >= 15) return 'age-warning';
   return '';
 }
 
@@ -253,7 +396,7 @@ const DROPDOWN_OPTIONS = {
   functionalGrade: ['','A (Sealed)','A','B','C'],
   tier:            ['','Tier 1','Tier 2','Tier 3'],
   listedCondition: ['','OB/LN','New - Open Box','Used - Like New','Used - Good','Used - Fair','Salvage/Parts'],
-  listingStatus:   [{value:1,label:'Not Listed'},{value:2,label:'Listed'},{value:3,label:'Pending Sale'},{value:4,label:'Shipped'},{value:5,label:'Sold'}],
+  listingStatus:   ['Not Listed','Drafted','Listed','Pending','Sold'],
   listingChannel:  ['','FBM','FBA','eBay','Mercari','OfferUp','Facebook','Craigslist','Direct','Other'],
   paymentMethod:   ['','Cash','Venmo','CashApp','Zelle','PayPal','Credit Card','Cash & Venmo','Other']
 };
@@ -454,7 +597,7 @@ async function saveItem() {
       functionalGrade: document.getElementById('itemFunctional').value,
       tier: '',
       listedCondition: '',
-      listingStatus: 1,
+      listingStatus: 'Not Listed',
       listings: [{ channel: '', price: 0, dateListed: '' }],
       salePrice: 0,
       soldPlatform: '',
@@ -474,6 +617,11 @@ async function saveItem() {
     calcItem(item);
     DATA.items.push(item);
     DATA.nextSKU = sku + 1;
+    _snapshotItem(item);
+    // Seed status_history for the new item (single 'Not Listed' entry).
+    try {
+      await supabase.insert('status_history', [{ item_sku: sku, status: item.listingStatus, source: 'initial' }]);
+    } catch (e) { console.error('initial status_history insert failed:', e); }
 
     closeItemModal();
     renderCurrentView();
@@ -505,7 +653,7 @@ const _updateTimers = {};
 function updateField(sku, field, value) {
   const item = DATA.items.find(i => i.sku === sku);
   if (!item) return;
-  if (['salePrice','platformFees','shippingCost','otherCosts','msrp','listingStatus'].includes(field)) {
+  if (['salePrice','platformFees','shippingCost','otherCosts','msrp'].includes(field)) {
     item[field] = Number(value) || 0;
     if (field === 'msrp') item[field] = Math.round(item[field]);
   } else {
@@ -547,7 +695,12 @@ function updateField(sku, field, value) {
       let dbValue = item[field];
       // Convert empty date strings to null for date columns
       if (field === 'dateSold' && dbValue === '') dbValue = null;
+      const prevStatus = _snapshotStatus[sku];
       await supabase.update('items', `sku=eq.${sku}`, { [dbField]: dbValue });
+      if (field === 'listingStatus') {
+        await logStatusChange(sku, prevStatus, item.listingStatus);
+        _snapshotStatus[sku] = item.listingStatus;
+      }
     } catch (err) {
       console.error(`updateField(${sku}, ${field}) error:`, err);
       toast('Error saving change — check console');
@@ -591,7 +744,7 @@ function itemRow(item, showAllCols=true) {
     ${DROPDOWN_OPTIONS.tier.map(t => `<option value="${t}" ${t===item.tier?'selected':''}>${t}</option>`).join('')}
   </select></td>`;
   html += `<td>${makeSelect(item.sku,'listedCondition',conditionOptions(),item.listedCondition)}</td>`;
-  html += `<td>${makeSelect(item.sku,'listingStatus',statusOpts,item.listingStatus)}</td>`;
+  html += `<td class="cell-with-history">${makeSelect(item.sku,'listingStatus',statusOpts,item.listingStatus)}<button class="history-icon" onclick="showStatusHistory(${item.sku},this)" title="Status history">&#9201;</button></td>`;
   // --- Flexible listings: Channel / List $ / Listed ---
   const ls = item.listings || [{ channel: '', price: 0, dateListed: '' }];
   let chHtml = '<td class="listings-cell">';
@@ -603,7 +756,8 @@ function itemRow(item, showAllCols=true) {
   html += chHtml;
   let prHtml = '<td class="listings-cell money-cell">';
   ls.forEach((l, idx) => {
-    prHtml += `<div class="listing-entry listing-money">$<input type="text" inputmode="decimal" value="${l.price||''}" onchange="updateListing(${item.sku},${idx},'price',this.value)"></div>`;
+    const chAttr = (l.channel || '').replace(/'/g, "\\'");
+    prHtml += `<div class="listing-entry listing-money">$<input type="text" inputmode="decimal" value="${l.price||''}" onchange="updateListing(${item.sku},${idx},'price',this.value)"><button class="history-icon" onclick="showPriceHistory(${item.sku},'${chAttr}',this)" title="Price history">&#9201;</button></div>`;
   });
   prHtml += '</td>';
   html += prHtml;
@@ -644,13 +798,13 @@ function setStaleFilter(val) {
 // Update stale count badges on the filter buttons
 function updateStaleBadges() {
   const listed = DATA.items.filter(isListed);
-  const warning = listed.filter(i => { const d = getListingAgeDays(i); return d != null && d >= 21; }).length;
+  const warning = listed.filter(i => { const d = getListingAgeDays(i); return d != null && d >= 15; }).length;
   const danger = listed.filter(i => { const d = getListingAgeDays(i); return d != null && d >= 30; }).length;
   document.querySelectorAll('.stale-btn').forEach(b => {
     const badge = b.querySelector('.stale-badge');
     if (badge) badge.remove();
     if (b.dataset.stale === 'warning' && warning > 0) {
-      b.innerHTML = `21+ Days<span class="stale-badge">${warning}</span>`;
+      b.innerHTML = `15+ Days<span class="stale-badge">${warning}</span>`;
     } else if (b.dataset.stale === 'danger' && danger > 0) {
       b.innerHTML = `30+ Days<span class="stale-badge">${danger}</span>`;
     }
@@ -829,7 +983,7 @@ function _scaleDefaults() {
 // ===== INDIVIDUAL CHART BUILDERS =====
 
 function renderChartCategory() {
-  const open = DATA.items.filter(i => i.listingStatus != 5);
+  const open = DATA.items.filter(i => i.listingStatus !== 'Sold');
   const counts = {};
   open.forEach(i => { const cat = i.category || 'Other'; counts[cat] = (counts[cat] || 0) + 1; });
   const labels = Object.keys(counts);
@@ -846,7 +1000,7 @@ function renderChartCategory() {
 }
 
 function renderChartCondition() {
-  const open = DATA.items.filter(i => i.listingStatus != 5);
+  const open = DATA.items.filter(i => i.listingStatus !== 'Sold');
   const counts = {};
   open.forEach(i => { const cond = i.listedCondition || 'Not Set'; counts[cond] = (counts[cond] || 0) + 1; });
   const labels = Object.keys(counts);
@@ -863,7 +1017,7 @@ function renderChartCondition() {
 }
 
 function renderChartAging() {
-  const open = DATA.items.filter(i => i.listingStatus != 5);
+  const open = DATA.items.filter(i => i.listingStatus !== 'Sold');
   const today = new Date();
   const buckets = { '0–15 days': 0, '15–30 days': 0, '30–45 days': 0, '45–60 days': 0, '60+ days': 0 };
 
@@ -908,7 +1062,7 @@ function renderChartAging() {
 }
 
 function renderChartSales() {
-  const sold = _filterByRange(DATA.items.filter(i => i.listingStatus == 5 && i.dateSold), 'dateSold');
+  const sold = _filterByRange(DATA.items.filter(i => i.listingStatus === 'Sold' && i.dateSold), 'dateSold');
   const rangeLabel = _getRangeLabel();
   const el = document.getElementById('salesRangeLabel');
   if (el) el.textContent = `${rangeLabel} — Weekly`;
@@ -954,7 +1108,7 @@ function renderChartSales() {
 }
 
 function renderChartDaysToSell() {
-  const sold = _filterByRange(DATA.items.filter(i => i.listingStatus == 5 && i.dateSold && i.dateListed), 'dateSold');
+  const sold = _filterByRange(DATA.items.filter(i => i.listingStatus === 'Sold' && i.dateSold && i.dateListed), 'dateSold');
   const rangeLabel = _getRangeLabel();
   const el = document.getElementById('daysRangeLabel');
   if (el) el.textContent = `${rangeLabel} — Weekly`;
@@ -1009,7 +1163,7 @@ function renderChartDaysToSell() {
 }
 
 function renderChartCumulative() {
-  const sold = _filterByRange(DATA.items.filter(i => i.listingStatus == 5 && i.dateSold), 'dateSold');
+  const sold = _filterByRange(DATA.items.filter(i => i.listingStatus === 'Sold' && i.dateSold), 'dateSold');
   const rangeLabel = _getRangeLabel();
   const el = document.getElementById('cumulativeRangeLabel');
   if (el) el.textContent = rangeLabel;
@@ -1104,7 +1258,7 @@ function renderAll() {
   const tier = document.getElementById('filterTier').value;
   let items = [...DATA.items];
   items = filterItems(items, search, lot);
-  if (status) items = items.filter(i => i.listingStatus == status);
+  if (status) items = items.filter(i => i.listingStatus === status);
   if (tier) items = items.filter(i => i.tier === tier);
   items = sortItems(items);
   let html = '<table>' + tableHeaders(true);
@@ -1119,14 +1273,14 @@ function renderOpen() {
   DATA.items.forEach(i => calcItem(i));
   const search = document.getElementById('searchOpen').value;
   const lot = document.getElementById('filterOpenLot').value;
-  let items = DATA.items.filter(i => i.listingStatus != 5);
+  let items = DATA.items.filter(i => i.listingStatus !== 'Sold');
   items = filterItems(items, search, lot);
 
   // Apply stale listing filter
   if (_staleFilter === 'warning') {
     items = items.filter(i => {
       const d = getListingAgeDays(i);
-      return isListed(i) && d != null && d >= 21;
+      return isListed(i) && d != null && d >= 15;
     });
   } else if (_staleFilter === 'danger') {
     items = items.filter(i => {
@@ -1154,7 +1308,7 @@ function renderSold() {
   DATA.items.forEach(i => calcItem(i));
   const search = document.getElementById('searchSold').value;
   const lot = document.getElementById('filterSoldLot').value;
-  let items = DATA.items.filter(i => i.listingStatus == 5);
+  let items = DATA.items.filter(i => i.listingStatus === 'Sold');
   items = filterItems(items, search, lot);
   if (currentSortField) {
     items = sortItems(items);
@@ -1173,7 +1327,7 @@ function renderLots() {
   let html = '';
   DATA.lots.forEach(lot => {
     const items = DATA.items.filter(i => i.lotId == lot.id);
-    const sold = items.filter(i => i.listingStatus == 5);
+    const sold = items.filter(i => i.listingStatus === 'Sold');
     const revenue = sold.reduce((s,i) => s + (Number(i.salePrice)||0), 0);
     const profit = sold.reduce((s,i) => s + (i.grossProfit||0), 0);
     html += `<div class="lot-card">
@@ -1324,8 +1478,8 @@ function updateCategorySelect() {
 }
 
 function updateBadges() {
-  const open = DATA.items.filter(i => i.listingStatus != 5).length;
-  const sold = DATA.items.filter(i => i.listingStatus == 5).length;
+  const open = DATA.items.filter(i => i.listingStatus !== 'Sold').length;
+  const sold = DATA.items.filter(i => i.listingStatus === 'Sold').length;
   document.querySelectorAll('.tab').forEach(t => {
     if (t.dataset.tab === 'open' && open > 0) t.innerHTML = `Open Inventory <span class="badge">${open}</span>`;
     if (t.dataset.tab === 'sold') t.innerHTML = `Sold Items <span class="badge">${sold}</span>`;
@@ -1419,19 +1573,9 @@ document.addEventListener('contextmenu', function(e) {
   openDropdownEditor(field);
 });
 
-function _isValueLabelList() {
-  return _editingDropdownField === 'listingStatus';
-}
-
-function _getOptLabel(opt) {
-  if (typeof opt === 'object' && opt.label != null) return opt.label;
-  return opt;
-}
-
 function openDropdownEditor(field) {
   _editingDropdownField = field;
-  // Deep copy for value/label objects
-  _editingDropdownOptions = DROPDOWN_OPTIONS[field].map(o => typeof o === 'object' ? {...o} : o);
+  _editingDropdownOptions = DROPDOWN_OPTIONS[field].slice();
   document.getElementById('dropdownModalTitle').textContent = 'Edit ' + DROPDOWN_LABELS[field] + ' Options';
   document.getElementById('dropdownNewOption').value = '';
   renderDropdownEditorList();
@@ -1446,17 +1590,14 @@ function closeDropdownModal() {
 
 function renderDropdownEditorList() {
   const container = document.getElementById('dropdownOptionsList');
-  const isVL = _isValueLabelList();
   container.innerHTML = _editingDropdownOptions.map((opt, i) => {
-    const label = _getOptLabel(opt);
-    const isBlank = label === '';
-    const displayLabel = isBlank ? '(blank)' : label;
+    const isBlank = opt === '';
+    const displayLabel = isBlank ? '(blank)' : opt;
     const labelClass = isBlank ? 'opt-label empty-opt' : 'opt-label';
-    const valueTag = isVL ? `<span style="color:var(--text-dim);font-size:11px;margin-left:4px">[${opt.value}]</span>` : '';
     return `<div class="dropdown-opt-item" draggable="true" data-idx="${i}"
       ondragstart="ddDragStart(event)" ondragover="ddDragOver(event)" ondragleave="ddDragLeave(event)" ondrop="ddDrop(event)">
       <span class="opt-drag">⠿</span>
-      <span class="${labelClass}">${displayLabel}${valueTag}</span>
+      <span class="${labelClass}">${displayLabel}</span>
       <button class="opt-remove" onclick="removeDropdownOption(${i})" title="Remove">&times;</button>
     </div>`;
   }).join('');
@@ -1466,16 +1607,8 @@ function addDropdownOption() {
   const input = document.getElementById('dropdownNewOption');
   const val = input.value.trim();
   if (!val) return;
-  if (_isValueLabelList()) {
-    // Check if label already exists
-    if (_editingDropdownOptions.some(o => o.label === val)) { toast('Option already exists'); return; }
-    // Auto-assign next numeric value
-    const maxVal = _editingDropdownOptions.reduce((m, o) => Math.max(m, o.value || 0), 0);
-    _editingDropdownOptions.push({ value: maxVal + 1, label: val });
-  } else {
-    if (_editingDropdownOptions.includes(val)) { toast('Option already exists'); return; }
-    _editingDropdownOptions.push(val);
-  }
+  if (_editingDropdownOptions.includes(val)) { toast('Option already exists'); return; }
+  _editingDropdownOptions.push(val);
   input.value = '';
   renderDropdownEditorList();
 }
@@ -1519,8 +1652,7 @@ function ddDrop(e) {
 
 async function saveDropdownChanges() {
   if (!_editingDropdownField) return;
-  // Deep copy for value/label objects
-  DROPDOWN_OPTIONS[_editingDropdownField] = _editingDropdownOptions.map(o => typeof o === 'object' ? {...o} : o);
+  DROPDOWN_OPTIONS[_editingDropdownField] = _editingDropdownOptions.slice();
   await saveDropdownOptions();
   closeDropdownModal();
   updateCategorySelect();

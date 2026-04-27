@@ -186,6 +186,23 @@ td.listings-cell { padding: 4px 6px; vertical-align: top; }
 .stale-btn.active[data-stale="danger"] { background: var(--red); border-color: var(--red); }
 .stale-badge { font-size: 10px; padding: 1px 5px; border-radius: 8px; margin-left: 4px; background: rgba(255,255,255,.2); }
 
+/* History icon (next to price + status cells) */
+.history-icon { flex-shrink: 0; background: none; border: none; color: var(--text-dim); cursor: pointer; font-size: 13px; line-height: 1; padding: 2px 4px; margin-left: 2px; border-radius: 4px; opacity: 0.4; transition: opacity .15s, color .15s; }
+.history-icon:hover { opacity: 1; color: var(--accent); background: rgba(79,140,255,.10); }
+td.cell-with-history { display: flex; align-items: center; gap: 2px; padding: 4px 6px; }
+td.cell-with-history select { flex: 1; min-width: 0; }
+
+/* History popover */
+.history-popover { position: absolute; z-index: 300; min-width: 200px; max-width: 280px; max-height: 320px; overflow-y: auto; background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,.4); padding: 10px 12px; font-size: 12px; color: var(--text); }
+.history-popover-title { font-size: 11px; font-weight: 600; color: var(--text-dim); text-transform: uppercase; letter-spacing: .04em; margin-bottom: 8px; padding-bottom: 6px; border-bottom: 1px solid var(--border); }
+.history-popover-empty { color: var(--text-dim); font-style: italic; padding: 4px 0; }
+.history-popover-list { display: flex; flex-direction: column; gap: 4px; }
+.history-popover-entry { display: flex; align-items: center; gap: 8px; padding: 4px 0; border-bottom: 1px dashed rgba(255,255,255,.04); }
+.history-popover-entry:last-child { border-bottom: none; }
+.history-popover-when { color: var(--text-dim); flex-shrink: 0; min-width: 90px; }
+.history-popover-value { color: var(--text); font-weight: 500; flex: 1; }
+.history-popover-seed { font-size: 9px; padding: 1px 5px; border-radius: 6px; background: rgba(255,255,255,.08); color: var(--text-dim); text-transform: uppercase; letter-spacing: .04em; }
+
 /* Toast notification */
 .toast { position: fixed; bottom: 20px; right: 20px; background: var(--surface2); border: 1px solid var(--green); color: var(--green); padding: 12px 20px; border-radius: 8px; font-size: 13px; z-index: 200; transform: translateY(100px); opacity: 0; transition: all .3s; }
 .toast.show { transform: translateY(0); opacity: 1; }
