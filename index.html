@@ -213,10 +213,39 @@
   </div>
 </div>
 
+<!-- Photo Sheet Modal -->
+<div class="modal-overlay" id="photoSheet">
+  <div class="modal photo-sheet">
+    <div class="photo-sheet-header">
+      <h2 id="photoSheetTitle">Photos</h2>
+      <button class="btn btn-sm" onclick="closePhotoSheet()">Close</button>
+    </div>
+    <div class="photo-sheet-actions">
+      <label class="btn btn-primary photo-add-btn" for="photoFileInput">+ Add Photo</label>
+      <input type="file" id="photoFileInput" accept="image/*" multiple class="photo-file-input" onchange="_onPhotoFileInput(this)">
+      <div class="photo-clone-row">
+        <input type="number" id="photoCloneSrcSku" placeholder="Source SKU" min="1" inputmode="numeric">
+        <button class="btn" onclick="_onCloneFromSku()">Clone from SKU</button>
+      </div>
+    </div>
+    <div class="photo-sheet-grid" id="photoSheetGrid"></div>
+  </div>
+</div>
+
+<!-- Photo Lightbox -->
+<div class="photo-lightbox" id="photoLightbox" onclick="if(event.target===this)closeLightbox()">
+  <button class="lightbox-close" onclick="closeLightbox()" title="Close">&times;</button>
+  <button class="lightbox-nav lightbox-prev" onclick="lightboxPrev()" title="Previous">&#10094;</button>
+  <img id="photoLightboxImg" alt="">
+  <button class="lightbox-nav lightbox-next" onclick="lightboxNext()" title="Next">&#10095;</button>
+  <div class="lightbox-counter" id="photoLightboxCounter"></div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
 <script src="supabase.js"></script>
+<script src="photos.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

@@ -60,6 +60,7 @@ async function loadData() {
       calcItem(i);
     });
     _snapshotAll();
+    await loadAllPhotos();
   } catch (err) {
     console.error('Failed to load data from Supabase:', err);
     toast('Error loading data — check console');
@@ -776,6 +777,7 @@ function itemRow(item, showAllCols=true) {
   const ageCls = getAgingClass(item);
   let html = `<tr data-sku="${item.sku}" class="${ageCls}">`;
   html += `<td>${item.sku}</td>`;
+  html += photoCellHtml(item);
   html += `<td>Lot ${item.lotId}</td>`;
   html += `<td>${makeInput(item.sku,'bstockItemCode',item.bstockItemCode || '')}</td>`;
   html += `<td>${makeInput(item.sku,'brand',item.brand)}</td>`;
@@ -863,7 +865,7 @@ let currentSortField = null;
 let currentSortDir = 'asc';
 
 const HEADER_FIELD_MAP_ALL = [
-  {label:'SKU',field:'sku'},{label:'Lot',field:'lotId'},{label:'Item #',field:'bstockItemCode'},
+  {label:'SKU',field:'sku'},{label:'Photos',field:'photoCount',noSort:true},{label:'Lot',field:'lotId'},{label:'Item #',field:'bstockItemCode'},
   {label:'Brand',field:'brand'},{label:'Model',field:'model'},
   {label:'Category',field:'category'},{label:'Unit Cost',field:'unitCost'},
   {label:'Cosmetic',field:'cosmeticGrade'},{label:'Functional',field:'functionalGrade'},
@@ -880,7 +882,7 @@ const HEADER_FIELD_MAP_SHORT = HEADER_FIELD_MAP_ALL.filter(h =>
 
 // Default column widths (px) by field name
 const COL_DEFAULT_WIDTHS = {
-  sku: 75, lotId: 80, bstockItemCode: 100, brand: 155, model: 200, category: 140, unitCost: 120,
+  sku: 75, photoCount: 80, lotId: 80, bstockItemCode: 100, brand: 155, model: 200, category: 140, unitCost: 120,
   powersOn: 120, coreFunction: 140, accessories: 130, missingItems: 155,
   cosmeticGrade: 125, functionalGrade: 140, tier: 95, listedCondition: 140,
   listingStatus: 110, listingChannel: 125, listPrice: 110, dateListed: 135,
@@ -891,6 +893,10 @@ const COL_DEFAULT_WIDTHS = {
 
 function rth(col) {
   if (!col) return '<th style="width:45px"></th>';
+  if (col.noSort) {
+    const w = COL_DEFAULT_WIDTHS[col.field] || 100;
+    return `<th style="width:${w}px" data-sort-field="${col.field}">${col.label}<span class="col-resize"></span></th>`;
+  }
   const arrow = currentSortField === col.field
     ? (currentSortDir === 'asc' ? '\u25B2' : '\u25BC')
     : '\u25B2';
@@ -1311,7 +1317,7 @@ function renderAll() {
   items = sortItems(items);
   let html = '<table>' + tableHeaders(true);
   items.forEach(i => html += itemRow(i, true));
-  if (!items.length) html += '<tr><td colspan="30" style="text-align:center;padding:24px;color:var(--text-dim)">No items found</td></tr>';
+  if (!items.length) html += '<tr><td colspan="31" style="text-align:center;padding:24px;color:var(--text-dim)">No items found</td></tr>';
   html += '</table>';
   document.getElementById('allTable').innerHTML = html;
   applyColumnWidths('allTable');
@@ -1344,7 +1350,7 @@ function renderOpen() {
     const msg = _staleFilter !== 'all'
       ? 'No stale listings found — looking good!'
       : 'All items sold! Nice work.';
-    html += `<tr><td colspan="30" style="text-align:center;padding:24px;color:var(--text-dim)">${msg}</td></tr>`;
+    html += `<tr><td colspan="31" style="text-align:center;padding:24px;color:var(--text-dim)">${msg}</td></tr>`;
   }
   html += '</table>';
   document.getElementById('openTable').innerHTML = html;
@@ -1365,7 +1371,7 @@ function renderSold() {
   }
   let html = '<table>' + tableHeaders(true);
   items.forEach(i => html += itemRow(i, true));
-  if (!items.length) html += '<tr><td colspan="30" style="text-align:center;padding:24px;color:var(--text-dim)">No sold items yet</td></tr>';
+  if (!items.length) html += '<tr><td colspan="31" style="text-align:center;padding:24px;color:var(--text-dim)">No sold items yet</td></tr>';
   html += '</table>';
   document.getElementById('soldTable').innerHTML = html;
   applyColumnWidths('soldTable');

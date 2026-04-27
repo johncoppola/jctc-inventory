@@ -65,5 +65,62 @@ const supabase = {
     });
     if (!res.ok) throw new Error(`RPC ${fn} failed: ${res.status} ${await res.text()}`);
     return res.json();
+  },
+
+  // ===== STORAGE =====
+  // Upload a Blob/File to a bucket at the given path. Overwrites if exists (upsert).
+  async storageUpload(bucket, path, blob, contentType) {
+    const res = await fetch(`${SUPABASE_URL}/storage/v1/object/${bucket}/${path}`, {
+      method: 'POST',
+      headers: {
+        'apikey': SUPABASE_ANON_KEY,
+        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+        'Content-Type': contentType || blob.type || 'application/octet-stream',
+        'x-upsert': 'true'
+      },
+      body: blob
+    });
+    if (!res.ok) throw new Error(`Storage upload failed: ${res.status} ${await res.text()}`);
+    return res.json();
+  },
+
+  // Delete an object (or several) from a bucket.
+  async storageDelete(bucket, paths) {
+    const list = Array.isArray(paths) ? paths : [paths];
+    const res = await fetch(`${SUPABASE_URL}/storage/v1/object/${bucket}`, {
+      method: 'DELETE',
+      headers: {
+        'apikey': SUPABASE_ANON_KEY,
+        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ prefixes: list })
+    });
+    if (!res.ok) throw new Error(`Storage delete failed: ${res.status} ${await res.text()}`);
+    return res.json();
+  },
+
+  // Server-side copy from sourcePath to destPath inside the same bucket.
+  async storageCopy(bucket, sourcePath, destPath) {
+    const res = await fetch(`${SUPABASE_URL}/storage/v1/object/copy`, {
+      method: 'POST',
+      headers: {
+        'apikey': SUPABASE_ANON_KEY,
+        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        bucketId: bucket,
+        sourceKey: sourcePath,
+        destinationKey: destPath
+      })
+    });
+    if (!res.ok) throw new Error(`Storage copy failed: ${res.status} ${await res.text()}`);
+    return res.json();
+  },
+
+  // Build a public URL for an object in a public bucket.
+  storagePublicUrl(bucket, path) {
+    return `${SUPABASE_URL}/storage/v1/object/public/${bucket}/${path}`;
   }
 };
