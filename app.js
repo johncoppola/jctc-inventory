@@ -217,6 +217,55 @@ function autoDefaultSoldPlatform(sku) {
   }, 300);
 }
 
+// Auto-fill salePrice from the matching channel's listing when an item is marked Sold.
+// Only fires when salePrice isn't already set, so manual entries are never overwritten.
+function autoDefaultSalePrice(sku) {
+  const item = DATA.items.find(i => i.sku === sku);
+  if (!item || Number(item.salePrice) > 0) return;
+  let price = 0;
+  if (item.soldPlatform) {
+    const match = (item.listings || []).find(l => l.channel === item.soldPlatform && Number(l.price) > 0);
+    if (match) price = Number(match.price);
+  }
+  if (!price) {
+    const priced = (item.listings || []).filter(l => Number(l.price) > 0);
+    if (priced.length === 1) price = Number(priced[0].price);
+  }
+  if (!price) return;
+  item.salePrice = price;
+  calcItem(item);
+  const row = document.querySelector(`tr[data-sku="${sku}"]`);
+  if (row) {
+    const sp = row.querySelector('input[onchange*="salePrice"]');
+    if (sp) sp.value = price;
+  }
+  _updateCalcCells(sku, item);
+  const timer = `${sku}_salePrice`;
+  clearTimeout(_updateTimers[timer]);
+  _updateTimers[timer] = setTimeout(async () => {
+    try { await supabase.update('items', `sku=eq.${sku}`, { sale_price: item.salePrice }); }
+    catch (e) { console.error('Auto-set salePrice error:', e); }
+  }, 300);
+}
+
+// Update the Net Proceeds / Gross Profit / ROI display cells for a row.
+function _updateCalcCells(sku, item) {
+  const row = document.querySelector(`tr[data-sku="${sku}"]`);
+  if (!row) return;
+  row.querySelectorAll('.calc-cell').forEach(c => {
+    if (c.dataset.field === 'unitCost') c.textContent = fmt(item.unitCost);
+    if (c.dataset.field === 'netProceeds') c.textContent = fmt(item.netProceeds);
+    if (c.dataset.field === 'grossProfit') {
+      c.textContent = fmt(item.grossProfit);
+      c.className = 'calc-cell ' + (item.grossProfit == null ? '' : (item.grossProfit >= 0 ? 'positive' : 'negative'));
+    }
+    if (c.dataset.field === 'roi') {
+      c.textContent = fmtPct(item.roi);
+      c.className = 'calc-cell ' + (item.roi == null ? '' : (item.roi >= 0 ? 'positive' : 'negative'));
+    }
+  });
+}
+
 // ===== HISTORY LOGGING (price + status) =====
 // Snapshots of last-saved values used to diff for history rows.
 const _snapshotListings = {}; // sku -> [{channel, price, dateListed}]
@@ -663,6 +712,10 @@ function updateField(sku, field, value) {
 
   // Auto-default soldPlatform when status changes
   if (field === 'listingStatus') autoDefaultSoldPlatform(sku);
+  // Auto-fill salePrice from the matching listing when an item becomes Sold
+  if ((field === 'listingStatus' || field === 'soldPlatform') && item.listingStatus === 'Sold') {
+    autoDefaultSalePrice(sku);
+  }
 
   // Update the MSRP input to show the rounded value
   if (field === 'msrp') {
@@ -674,16 +727,7 @@ function updateField(sku, field, value) {
   }
 
   // Update calculated display cells immediately
-  const row = document.querySelector(`tr[data-sku="${sku}"]`);
-  if (row) {
-    const cells = row.querySelectorAll('.calc-cell');
-    cells.forEach(c => {
-      if (c.dataset.field === 'unitCost') c.textContent = fmt(item.unitCost);
-      if (c.dataset.field === 'netProceeds') c.textContent = fmt(item.netProceeds);
-      if (c.dataset.field === 'grossProfit') { c.textContent = fmt(item.grossProfit); c.className = 'calc-cell ' + (item.grossProfit >= 0 ? 'positive' : 'negative'); }
-      if (c.dataset.field === 'roi') { c.textContent = fmt(item.roi); c.className = 'calc-cell ' + (item.roi >= 0 ? 'positive' : 'negative'); }
-    });
-  }
+  _updateCalcCells(sku, item);
 
   // Debounce the DB write (300ms) so rapid typing doesn't spam requests
   const timerKey = `${sku}_${field}`;
