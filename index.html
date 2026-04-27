@@ -224,7 +224,7 @@
       <label class="btn btn-primary photo-add-btn" for="photoFileInput">+ Add Photo</label>
       <input type="file" id="photoFileInput" accept="image/*" multiple class="photo-file-input" onchange="_onPhotoFileInput(this)">
       <div class="photo-clone-row">
-        <input type="number" id="photoCloneSrcSku" placeholder="Source SKU" min="1" inputmode="numeric">
+        <input type="text" id="photoCloneSrcSku" placeholder="Source SKU" inputmode="numeric" pattern="[0-9]*">
         <button class="btn" onclick="_onCloneFromSku()">Clone from SKU</button>
       </div>
     </div>
