@@ -132,12 +132,36 @@ CREATE TABLE item_photos (
   public_url    TEXT NOT NULL,                       -- denormalised so the UI doesn't have to reconstruct it
   position      INTEGER NOT NULL DEFAULT 0,          -- ordering within a SKU
   uploaded_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
-  source        TEXT NOT NULL DEFAULT 'capture'     -- 'capture' | 'clone'
+  source        TEXT NOT NULL DEFAULT 'capture',    -- 'capture' | 'clone'
+  is_hero       BOOLEAN NOT NULL DEFAULT false      -- chunk #8: one-per-SKU enforced by trigger below
 );
 CREATE INDEX item_photos_sku_position_idx ON item_photos (item_sku, position);
 ALTER TABLE item_photos ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Allow all on item_photos" ON item_photos
   FOR ALL USING (true) WITH CHECK (true);
+
+-- One-hero-per-SKU enforcement (chunk #8): when a row is inserted/updated with
+-- is_hero=true, unset is_hero on every other row for the same SKU. Falsey
+-- updates are not affected (WHEN clause), so no recursion.
+CREATE OR REPLACE FUNCTION enforce_one_hero_per_sku()
+RETURNS TRIGGER AS $$
+BEGIN
+  IF NEW.is_hero THEN
+    UPDATE item_photos
+       SET is_hero = false
+     WHERE item_sku = NEW.item_sku
+       AND id <> NEW.id
+       AND is_hero = true;
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER item_photos_one_hero_trigger
+  BEFORE INSERT OR UPDATE OF is_hero ON item_photos
+  FOR EACH ROW
+  WHEN (NEW.is_hero = true)
+  EXECUTE FUNCTION enforce_one_hero_per_sku();
 
 -- Storage bucket setup (run once via Supabase Studio or storage SQL):
 --   INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
@@ -157,6 +181,8 @@ CREATE POLICY "Allow all on item_photos" ON item_photos
 -- Migration 5: price_history + status_history tables, seeded from current items
 -- Migration 6: items.bstock_item_code TEXT NOT NULL DEFAULT '' + indexed; backfilled lots 2 & 3 from manifests
 -- Migration 7: item_photos table + 'item-photos' storage bucket with permissive policies
+-- Migration 9: item_photos.is_hero BOOLEAN NOT NULL DEFAULT false +
+--   enforce_one_hero_per_sku() trigger (one-hero-per-SKU semantics).
 -- Migration 8: item-photos bucket expanded to allow videos + 200 MB file size:
 --   UPDATE storage.buckets
 --   SET file_size_limit = 209715200,

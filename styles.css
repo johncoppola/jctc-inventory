@@ -231,6 +231,12 @@ td.photo-cell.has-photos .photo-btn { color: var(--accent); border-color: rgba(7
 @media (hover: none) { .photo-thumb-del { opacity: 1; } }
 .photo-thumb-play { position: absolute; left: 50%; top: 50%; transform: translate(-50%,-50%); width: 36px; height: 36px; border-radius: 18px; background: rgba(0,0,0,.55); color: #fff; font-size: 14px; line-height: 36px; text-align: center; pointer-events: none; padding-left: 2px; }
 .photo-thumb.is-video::after { content: 'VIDEO'; position: absolute; left: 4px; bottom: 4px; padding: 1px 5px; font-size: 10px; font-weight: 600; color: #fff; background: rgba(0,0,0,.6); border-radius: 3px; }
+/* Hero flag (chunk #8): always-visible top-left toggle. Outlined star = not hero, gold pill = hero. */
+.photo-thumb-hero { position: absolute; top: 4px; left: 4px; min-width: 24px; height: 24px; padding: 0 7px; background: rgba(0,0,0,.55); border: none; color: #fff; border-radius: 12px; cursor: pointer; font-size: 12px; font-weight: 700; line-height: 24px; text-align: center; opacity: .7; transition: opacity .15s, background .15s; }
+.photo-thumb:hover .photo-thumb-hero, .photo-thumb-hero:focus { opacity: 1; }
+@media (hover: none) { .photo-thumb-hero { opacity: 1; } }
+.photo-thumb-hero.is-hero { background: #d4a017; color: #000; opacity: 1; box-shadow: 0 0 0 1px rgba(0,0,0,.25); }
+.photo-thumb.is-hero { outline: 2px solid #d4a017; outline-offset: -2px; }
 
 /* Lightbox */
 .photo-lightbox { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.92); z-index: 400; align-items: center; justify-content: center; }

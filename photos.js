@@ -1,7 +1,8 @@
-// ===== PHOTOS — chunk #3 =====
-// Mobile/desktop photo capture, gallery, and clone-from-SKU for items.
+// ===== PHOTOS — chunks #3 + #8 =====
+// Mobile/desktop photo capture, gallery, clone-from-SKU, and hero-flag for items.
 // Photos live in Supabase Storage bucket 'item-photos' at path '{sku}/{uuid}.jpg'.
-// Metadata in public.item_photos (id, item_sku, storage_path, public_url, position, source).
+// Metadata in public.item_photos (id, item_sku, storage_path, public_url, position, source, is_hero).
+// One-hero-per-SKU is enforced by a Postgres trigger; setting a new hero auto-unsets the old one server-side.
 
 const PHOTO_BUCKET = 'item-photos';
 
@@ -35,6 +36,7 @@ async function loadAllPhotos() {
 
 function getPhotos(sku) { return PHOTOS_BY_SKU[sku] || []; }
 function getPhotoCount(sku) { return getPhotos(sku).length; }
+function getHeroPhoto(sku) { return getPhotos(sku).find(p => p.is_hero) || null; }
 
 // ===== UUID (no library, RFC4122 v4 — good enough for storage keys) =====
 function _uuid() {
@@ -152,6 +154,33 @@ async function clonePhotosFromSku(destSku, sourceSku) {
   toast(`Cloned ${inserted.length} item${inserted.length === 1 ? '' : 's'} from SKU ${sourceSku}`);
 }
 
+// ===== HERO FLAG (chunk #8) =====
+// Toggle the hero flag for a photo. Setting one row to is_hero=true triggers a
+// server-side BEFORE trigger that unsets is_hero on every other row for the same SKU,
+// so we mirror that behaviour in the local cache after the round-trip succeeds.
+async function toggleHeroPhoto(photoId) {
+  let sku = null, photo = null;
+  for (const [s, list] of Object.entries(PHOTOS_BY_SKU)) {
+    const idx = list.findIndex(p => p.id === photoId);
+    if (idx >= 0) { sku = Number(s); photo = list[idx]; break; }
+  }
+  if (!photo) return;
+  if (isVideoPath(photo.storage_path)) { toast('Videos cannot be the hero photo'); return; }
+  const newVal = !photo.is_hero;
+  try {
+    await supabase.update('item_photos', `id=eq.${photoId}`, { is_hero: newVal });
+  } catch (e) {
+    console.error('toggleHeroPhoto failed:', e);
+    toast('Hero update failed — check console');
+    return;
+  }
+  // Mirror the server trigger locally: when setting a new hero, clear all other heroes for this SKU.
+  if (newVal) PHOTOS_BY_SKU[sku].forEach(p => { p.is_hero = (p.id === photoId); });
+  else photo.is_hero = false;
+  if (_photoSheetSku === sku) _renderPhotoSheet();
+  toast(newVal ? 'Set as hero' : 'Hero unset');
+}
+
 // ===== UI: PHOTO COUNT CELL (in row) =====
 function photoCellHtml(item) {
   const n = getPhotoCount(item.sku);
@@ -200,8 +229,15 @@ function _renderPhotoSheet() {
       const inner = vid
         ? `<video src="${p.public_url}" muted playsinline preload="metadata" onclick="openLightbox(${sku},${idx})"></video><div class="photo-thumb-play" onclick="openLightbox(${sku},${idx})">▶</div>`
         : `<img src="${p.public_url}" alt="" onclick="openLightbox(${sku},${idx})" loading="lazy">`;
-      return `<div class="photo-thumb${vid ? ' is-video' : ''}">
+      // Hero toggle is image-only — videos go in the listing's video field, not a photo slot.
+      const heroBtn = vid
+        ? ''
+        : (p.is_hero
+            ? `<button class="photo-thumb-hero is-hero" onclick="toggleHeroPhoto('${p.id}')" title="Hero (slot 1 in listings) — tap to unset">★ HERO</button>`
+            : `<button class="photo-thumb-hero" onclick="toggleHeroPhoto('${p.id}')" title="Set as hero (slot 1 in listings)">☆</button>`);
+      return `<div class="photo-thumb${vid ? ' is-video' : ''}${p.is_hero ? ' is-hero' : ''}">
                 ${inner}
+                ${heroBtn}
                 <button class="photo-thumb-del" onclick="deletePhoto('${p.id}')" title="Delete">&times;</button>
               </div>`;
     }).join('');
