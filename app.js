@@ -908,7 +908,7 @@ function rth(col) {
 function tableHeaders(showAllCols=true) {
   const cols = showAllCols ? HEADER_FIELD_MAP_ALL : HEADER_FIELD_MAP_SHORT;
   let h = '<tr>' + cols.map(rth).join('');
-  h += '<th></th></tr>';
+  h += '<th style="width:60px" title="Delete">Del</th></tr>';
   return h;
 }
 
