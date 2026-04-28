@@ -865,7 +865,7 @@ let currentSortField = null;
 let currentSortDir = 'asc';
 
 const HEADER_FIELD_MAP_ALL = [
-  {label:'SKU',field:'sku'},{label:'Photos',field:'photoCount',noSort:true},{label:'Lot',field:'lotId'},{label:'Item #',field:'bstockItemCode'},
+  {label:'SKU',field:'sku'},{label:'Photos',field:'photoCount'},{label:'Lot',field:'lotId'},{label:'Item #',field:'bstockItemCode'},
   {label:'Brand',field:'brand'},{label:'Model',field:'model'},
   {label:'Category',field:'category'},{label:'Unit Cost',field:'unitCost'},
   {label:'Cosmetic',field:'cosmeticGrade'},{label:'Functional',field:'functionalGrade'},
@@ -927,7 +927,13 @@ function sortItems(items) {
   const field = currentSortField;
   const dir = currentSortDir === 'asc' ? 1 : -1;
   return items.sort((a, b) => {
-    let va = a[field], vb = b[field];
+    let va, vb;
+    if (field === 'photoCount') {
+      va = getPhotoCount(a.sku);
+      vb = getPhotoCount(b.sku);
+    } else {
+      va = a[field]; vb = b[field];
+    }
     if (va == null) va = '';
     if (vb == null) vb = '';
     if (typeof va === 'number' && typeof vb === 'number') return (va - vb) * dir;
