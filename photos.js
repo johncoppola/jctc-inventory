@@ -219,20 +219,102 @@ async function _onPhotoFileInput(input) {
   await uploadPhotosForSku(sku, files);
 }
 
-// Triggered by the hidden "📷 Camera" file input. Re-opens the camera after each
-// successful capture for rapid-burst mode. The user stops the loop by tapping
-// Cancel in the iOS camera UI (which fires onchange with no files).
-function _onCaptureInput(input) {
+// ===== IN-APP CAMERA (burst mode) =====
+// Uses getUserMedia for a live preview + canvas capture, so each shutter tap
+// stores a photo immediately without the iOS "Use Photo / Retake" prompt.
+let _incamStream = null;
+let _incamFacing = 'environment';
+let _incamCount = 0;
+let _incamSku = null;
+let _incamBusy = false;
+
+async function openInAppCamera() {
   if (_photoSheetSku == null) return;
-  const sku = _photoSheetSku;
-  const files = Array.from(input.files || []);
-  input.value = '';
-  if (!files.length) return;
-  // Re-trigger camera SYNCHRONOUSLY inside the user-gesture context, before the
-  // upload's awaits push us into a microtask where input.click() would be ignored.
-  try { input.click(); } catch (e) { console.warn('rapid capture re-open failed:', e); }
-  uploadPhotosForSku(sku, files);
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    toast('Camera not supported on this browser');
+    return;
+  }
+  _incamSku = _photoSheetSku;
+  _incamCount = 0;
+  document.getElementById('incamCounter').textContent = '0 captured';
+  document.getElementById('incamOverlay').classList.add('show');
+  await _startIncamStream();
 }
+
+async function _startIncamStream() {
+  try {
+    if (_incamStream) { _incamStream.getTracks().forEach(t => t.stop()); _incamStream = null; }
+    _incamStream = await navigator.mediaDevices.getUserMedia({
+      video: {
+        facingMode: { ideal: _incamFacing },
+        width:  { ideal: 4096 },
+        height: { ideal: 2160 }
+      },
+      audio: false
+    });
+    const video = document.getElementById('incamVideo');
+    video.srcObject = _incamStream;
+    // iOS needs an explicit play() inside the user-gesture chain.
+    try { await video.play(); } catch (_) {}
+  } catch (e) {
+    console.error('getUserMedia failed:', e);
+    toast('Camera access denied or unavailable');
+    closeInAppCamera();
+  }
+}
+
+async function switchInAppCamera() {
+  _incamFacing = (_incamFacing === 'environment') ? 'user' : 'environment';
+  await _startIncamStream();
+}
+
+async function captureInAppPhoto() {
+  if (!_incamStream || _incamSku == null || _incamBusy) return;
+  const video = document.getElementById('incamVideo');
+  if (!video.videoWidth || !video.videoHeight) { toast('Camera not ready'); return; }
+  _incamBusy = true;
+  // Optimistic UI: bump counter + flash before the encode finishes.
+  _incamCount++;
+  document.getElementById('incamCounter').textContent = `${_incamCount} captured`;
+  const flash = document.getElementById('incamFlash');
+  flash.classList.add('flashing');
+  setTimeout(() => flash.classList.remove('flashing'), 140);
+  try {
+    const canvas = document.createElement('canvas');
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
+    const blob = await new Promise(res => canvas.toBlob(res, 'image/jpeg', 0.92));
+    if (blob) {
+      const file = new File([blob], `incam-${Date.now()}.jpg`, { type: 'image/jpeg' });
+      uploadPhotosForSku(_incamSku, [file]); // background — don't block shutter
+    }
+  } catch (e) {
+    console.error('captureInAppPhoto failed:', e);
+    _incamCount = Math.max(0, _incamCount - 1);
+    document.getElementById('incamCounter').textContent = `${_incamCount} captured`;
+    toast('Capture failed');
+  } finally {
+    // Brief debounce so super-fast taps don't queue a flood of encodes.
+    setTimeout(() => { _incamBusy = false; }, 120);
+  }
+}
+
+function closeInAppCamera() {
+  if (_incamStream) { _incamStream.getTracks().forEach(t => t.stop()); _incamStream = null; }
+  const video = document.getElementById('incamVideo');
+  if (video) video.srcObject = null;
+  document.getElementById('incamOverlay').classList.remove('show');
+  _incamSku = null;
+}
+
+// Esc closes the in-app camera; Space/Enter triggers the shutter.
+document.addEventListener('keydown', (e) => {
+  const overlay = document.getElementById('incamOverlay');
+  if (!overlay || !overlay.classList.contains('show')) return;
+  if (e.key === 'Escape') { e.preventDefault(); closeInAppCamera(); }
+  else if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); captureInAppPhoto(); }
+});
 
 async function _onCloneFromSku() {
   if (_photoSheetSku == null) return;

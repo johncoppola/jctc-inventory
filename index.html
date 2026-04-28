@@ -223,15 +223,30 @@
     <div class="photo-sheet-actions">
       <label class="btn btn-primary photo-add-btn" for="photoFileInput">+ Add Media</label>
       <input type="file" id="photoFileInput" accept="image/*,video/*" multiple class="photo-file-input" onchange="_onPhotoFileInput(this)">
-      <label class="btn photo-capture-btn" for="photoCaptureInput">📷 Camera (rapid)</label>
-      <input type="file" id="photoCaptureInput" accept="image/*,video/*" capture="environment" class="photo-file-input" onchange="_onCaptureInput(this)">
+      <button class="btn photo-capture-btn" onclick="openInAppCamera()">📷 Camera</button>
       <div class="photo-clone-row">
         <input type="text" id="photoCloneSrcSku" placeholder="Source SKU" inputmode="numeric" pattern="[0-9]*">
         <button class="btn" onclick="_onCloneFromSku()">Clone from SKU</button>
       </div>
     </div>
-    <div class="photo-sheet-hint">Camera (rapid) re-opens after each shot — tap Cancel in the camera to stop. Library picker supports multi-select (use “Select” in iOS Photos).</div>
+    <div class="photo-sheet-hint">Tap Camera to open the in-app shutter — take as many photos as you want, no Use/Retake prompt between shots. Library picker supports multi-select (use “Select” in iOS Photos).</div>
     <div class="photo-sheet-grid" id="photoSheetGrid"></div>
+  </div>
+</div>
+
+<!-- In-app Camera Overlay (burst mode — no "Use/Retake" between shots) -->
+<div class="incam-overlay" id="incamOverlay">
+  <div class="incam-topbar">
+    <button class="incam-btn" onclick="closeInAppCamera()" aria-label="Close">✕</button>
+    <span class="incam-counter" id="incamCounter">0 captured</span>
+    <button class="incam-btn" onclick="switchInAppCamera()" aria-label="Switch camera">⟲</button>
+  </div>
+  <div class="incam-stage">
+    <video id="incamVideo" playsinline autoplay muted></video>
+    <div class="incam-flash" id="incamFlash"></div>
+  </div>
+  <div class="incam-bottombar">
+    <button class="incam-shutter" id="incamShutter" onclick="captureInAppPhoto()" aria-label="Shutter"></button>
   </div>
 </div>
 
