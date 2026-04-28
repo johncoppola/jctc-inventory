@@ -122,12 +122,13 @@ ALTER TABLE status_history ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Allow all on status_history" ON status_history
   FOR ALL USING (true) WITH CHECK (true);
 
--- 8. ITEM PHOTOS — one row per uploaded photo, stored in Supabase Storage bucket 'item-photos'.
+-- 8. ITEM MEDIA — one row per uploaded photo OR video, stored in Supabase Storage bucket 'item-photos'.
 --    Storage path convention: '{sku}/{uuid}.{ext}'. Public bucket so listings can use direct URLs.
+--    Media type is derived from the file extension (no media_type column).
 CREATE TABLE item_photos (
   id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   item_sku      INTEGER NOT NULL REFERENCES items(sku) ON DELETE CASCADE,
-  storage_path  TEXT NOT NULL,                       -- e.g. '123/abc-def.jpg'
+  storage_path  TEXT NOT NULL,                       -- e.g. '123/abc-def.jpg' or '123/abc-def.mp4'
   public_url    TEXT NOT NULL,                       -- denormalised so the UI doesn't have to reconstruct it
   position      INTEGER NOT NULL DEFAULT 0,          -- ordering within a SKU
   uploaded_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -140,8 +141,9 @@ CREATE POLICY "Allow all on item_photos" ON item_photos
 
 -- Storage bucket setup (run once via Supabase Studio or storage SQL):
 --   INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
---   VALUES ('item-photos','item-photos',true,10485760,
---           ARRAY['image/jpeg','image/png','image/webp','image/heic','image/heif']);
+--   VALUES ('item-photos','item-photos',true,209715200,
+--           ARRAY['image/jpeg','image/png','image/webp','image/heic','image/heif',
+--                 'video/mp4','video/quicktime','video/webm','video/x-m4v','video/3gpp']);
 -- Permissive RLS policies on storage.objects for SELECT/INSERT/UPDATE/DELETE
 -- where bucket_id = 'item-photos'. (Single-user app — same model as the public tables.)
 
@@ -155,3 +157,11 @@ CREATE POLICY "Allow all on item_photos" ON item_photos
 -- Migration 5: price_history + status_history tables, seeded from current items
 -- Migration 6: items.bstock_item_code TEXT NOT NULL DEFAULT '' + indexed; backfilled lots 2 & 3 from manifests
 -- Migration 7: item_photos table + 'item-photos' storage bucket with permissive policies
+-- Migration 8: item-photos bucket expanded to allow videos + 200 MB file size:
+--   UPDATE storage.buckets
+--   SET file_size_limit = 209715200,
+--       allowed_mime_types = ARRAY[
+--         'image/jpeg','image/png','image/webp','image/heic','image/heif',
+--         'video/mp4','video/quicktime','video/webm','video/x-m4v','video/3gpp'
+--       ]
+--   WHERE id = 'item-photos';

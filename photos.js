@@ -14,6 +14,10 @@ let _photoSheetSku = null;
 let _lightboxSku = null;
 let _lightboxIdx = 0;
 
+// Media-type helpers — we don't store a media_type column; derive from extension.
+const VIDEO_EXT_RE = /\.(mp4|mov|m4v|webm|avi|mkv|qt|3gp)$/i;
+function isVideoPath(path) { return VIDEO_EXT_RE.test(path || ''); }
+
 // ===== LOAD =====
 async function loadAllPhotos() {
   try {
@@ -49,13 +53,15 @@ async function uploadPhotosForSku(sku, files) {
   let nextPos = existing.length ? Math.max(...existing.map(p => p.position || 0)) + 1 : 0;
   const inserted = [];
   for (const file of files) {
-    if (!file.type || !file.type.startsWith('image/')) {
-      toast(`Skipping ${file.name || 'file'} — not an image`);
+    const isImage = file.type && file.type.startsWith('image/');
+    const isVideo = file.type && file.type.startsWith('video/');
+    if (!isImage && !isVideo) {
+      toast(`Skipping ${file.name || 'file'} — not an image or video`);
       continue;
     }
     const id = _uuid();
-    // Strip extension and force .jpg-style suffix from the original — keeps it simple.
-    const ext = (file.name && file.name.split('.').pop() || 'jpg').toLowerCase().replace(/[^a-z0-9]/g, '') || 'jpg';
+    const defaultExt = isVideo ? 'mp4' : 'jpg';
+    const ext = (file.name && file.name.split('.').pop() || defaultExt).toLowerCase().replace(/[^a-z0-9]/g, '') || defaultExt;
     const path = `${sku}/${id}.${ext}`;
     try {
       await supabase.storageUpload(PHOTO_BUCKET, path, file, file.type);
@@ -79,7 +85,7 @@ async function uploadPhotosForSku(sku, files) {
   inserted.forEach(r => PHOTOS_BY_SKU[sku].push(r));
   _refreshPhotoCountCell(sku);
   if (_photoSheetSku === sku) _renderPhotoSheet();
-  if (inserted.length) toast(`Added ${inserted.length} photo${inserted.length === 1 ? '' : 's'}`);
+  if (inserted.length) toast(`Added ${inserted.length} item${inserted.length === 1 ? '' : 's'}`);
 }
 
 // ===== DELETE =====
@@ -91,7 +97,7 @@ async function deletePhoto(photoId) {
     if (idx >= 0) { sku = Number(s); photo = list[idx]; break; }
   }
   if (!photo) return;
-  if (!confirm('Delete this photo?')) return;
+  if (!confirm('Delete this item?')) return;
   try {
     await supabase.storageDelete(PHOTO_BUCKET, [photo.storage_path]);
   } catch (e) {
@@ -107,7 +113,7 @@ async function deletePhoto(photoId) {
   PHOTOS_BY_SKU[sku] = (PHOTOS_BY_SKU[sku] || []).filter(p => p.id !== photoId);
   _refreshPhotoCountCell(sku);
   if (_photoSheetSku === sku) _renderPhotoSheet();
-  toast('Photo deleted');
+  toast('Deleted');
 }
 
 // ===== CLONE FROM SKU =====
@@ -143,7 +149,7 @@ async function clonePhotosFromSku(destSku, sourceSku) {
   inserted.forEach(r => PHOTOS_BY_SKU[destSku].push(r));
   _refreshPhotoCountCell(destSku);
   if (_photoSheetSku === destSku) _renderPhotoSheet();
-  toast(`Cloned ${inserted.length} photo${inserted.length === 1 ? '' : 's'} from SKU ${sourceSku}`);
+  toast(`Cloned ${inserted.length} item${inserted.length === 1 ? '' : 's'} from SKU ${sourceSku}`);
 }
 
 // ===== UI: PHOTO COUNT CELL (in row) =====
@@ -183,30 +189,49 @@ function _renderPhotoSheet() {
   const titleEl = document.getElementById('photoSheetTitle');
   if (titleEl) {
     const label = item ? `${item.brand || ''} ${item.model || ''}`.trim() || `SKU ${sku}` : `SKU ${sku}`;
-    titleEl.textContent = `${label} — ${photos.length} photo${photos.length === 1 ? '' : 's'}`;
+    titleEl.textContent = `${label} — ${photos.length} item${photos.length === 1 ? '' : 's'}`;
   }
   const grid = document.getElementById('photoSheetGrid');
   if (!photos.length) {
-    grid.innerHTML = '<div class="photo-empty">No photos yet. Tap “Add Photo” to capture or upload.</div>';
+    grid.innerHTML = '<div class="photo-empty">No media yet. Tap “Add Media” or “Camera” to capture or upload.</div>';
   } else {
-    grid.innerHTML = photos.map((p, idx) =>
-      `<div class="photo-thumb">
-         <img src="${p.public_url}" alt="" onclick="openLightbox(${sku},${idx})" loading="lazy">
-         <button class="photo-thumb-del" onclick="deletePhoto('${p.id}')" title="Delete">&times;</button>
-       </div>`
-    ).join('');
+    grid.innerHTML = photos.map((p, idx) => {
+      const vid = isVideoPath(p.storage_path);
+      const inner = vid
+        ? `<video src="${p.public_url}" muted playsinline preload="metadata" onclick="openLightbox(${sku},${idx})"></video><div class="photo-thumb-play" onclick="openLightbox(${sku},${idx})">▶</div>`
+        : `<img src="${p.public_url}" alt="" onclick="openLightbox(${sku},${idx})" loading="lazy">`;
+      return `<div class="photo-thumb${vid ? ' is-video' : ''}">
+                ${inner}
+                <button class="photo-thumb-del" onclick="deletePhoto('${p.id}')" title="Delete">&times;</button>
+              </div>`;
+    }).join('');
   }
 }
 
-// Triggered by the hidden file input.
+// Triggered by the hidden "+ Add Media" file input (library picker, multi-select OK).
 async function _onPhotoFileInput(input) {
   if (_photoSheetSku == null) return;
   const sku = _photoSheetSku;
   const files = Array.from(input.files || []);
   input.value = ''; // reset so picking the same file again still fires onchange
   if (!files.length) return;
-  toast(`Uploading ${files.length} photo${files.length === 1 ? '' : 's'}…`);
+  toast(`Uploading ${files.length} item${files.length === 1 ? '' : 's'}…`);
   await uploadPhotosForSku(sku, files);
+}
+
+// Triggered by the hidden "📷 Camera" file input. Re-opens the camera after each
+// successful capture for rapid-burst mode. The user stops the loop by tapping
+// Cancel in the iOS camera UI (which fires onchange with no files).
+function _onCaptureInput(input) {
+  if (_photoSheetSku == null) return;
+  const sku = _photoSheetSku;
+  const files = Array.from(input.files || []);
+  input.value = '';
+  if (!files.length) return;
+  // Re-trigger camera SYNCHRONOUSLY inside the user-gesture context, before the
+  // upload's awaits push us into a microtask where input.click() would be ignored.
+  try { input.click(); } catch (e) { console.warn('rapid capture re-open failed:', e); }
+  uploadPhotosForSku(sku, files);
 }
 
 async function _onCloneFromSku() {
@@ -237,6 +262,8 @@ function openLightbox(sku, idx) {
 
 function closeLightbox() {
   document.getElementById('photoLightbox').classList.remove('show');
+  const vid = document.getElementById('photoLightboxVid');
+  if (vid) { vid.pause(); vid.removeAttribute('src'); vid.load(); }
   _lightboxSku = null;
 }
 
@@ -247,7 +274,21 @@ function _renderLightbox() {
   if (_lightboxIdx < 0) _lightboxIdx = photos.length - 1;
   if (_lightboxIdx >= photos.length) _lightboxIdx = 0;
   const p = photos[_lightboxIdx];
-  document.getElementById('photoLightboxImg').src = p.public_url;
+  const img = document.getElementById('photoLightboxImg');
+  const vid = document.getElementById('photoLightboxVid');
+  if (isVideoPath(p.storage_path)) {
+    img.style.display = 'none';
+    img.removeAttribute('src');
+    vid.style.display = '';
+    vid.src = p.public_url;
+  } else {
+    vid.pause();
+    vid.removeAttribute('src');
+    vid.load();
+    vid.style.display = 'none';
+    img.style.display = '';
+    img.src = p.public_url;
+  }
   document.getElementById('photoLightboxCounter').textContent = `${_lightboxIdx + 1} / ${photos.length}`;
 }
 
@@ -262,12 +303,14 @@ document.addEventListener('keydown', (e) => {
   else if (e.key === 'ArrowLeft') lightboxPrev();
 });
 
-// Touch swipe for lightbox (mobile)
+// Touch swipe for lightbox (mobile). Ignore swipes on the <video> element so the
+// native scrubber/controls keep working without flipping slides.
 (function () {
   let startX = null;
   const lb = () => document.getElementById('photoLightbox');
   document.addEventListener('touchstart', (e) => {
     if (!lb() || !lb().classList.contains('show')) return;
+    if (e.target && e.target.closest && e.target.closest('video')) { startX = null; return; }
     if (e.touches.length === 1) startX = e.touches[0].clientX;
   });
   document.addEventListener('touchend', (e) => {

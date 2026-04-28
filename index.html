@@ -217,17 +217,20 @@
 <div class="modal-overlay" id="photoSheet">
   <div class="modal photo-sheet">
     <div class="photo-sheet-header">
-      <h2 id="photoSheetTitle">Photos</h2>
+      <h2 id="photoSheetTitle">Media</h2>
       <button class="btn btn-sm" onclick="closePhotoSheet()">Close</button>
     </div>
     <div class="photo-sheet-actions">
-      <label class="btn btn-primary photo-add-btn" for="photoFileInput">+ Add Photo</label>
-      <input type="file" id="photoFileInput" accept="image/*" multiple class="photo-file-input" onchange="_onPhotoFileInput(this)">
+      <label class="btn btn-primary photo-add-btn" for="photoFileInput">+ Add Media</label>
+      <input type="file" id="photoFileInput" accept="image/*,video/*" multiple class="photo-file-input" onchange="_onPhotoFileInput(this)">
+      <label class="btn photo-capture-btn" for="photoCaptureInput">📷 Camera (rapid)</label>
+      <input type="file" id="photoCaptureInput" accept="image/*,video/*" capture="environment" class="photo-file-input" onchange="_onCaptureInput(this)">
       <div class="photo-clone-row">
         <input type="text" id="photoCloneSrcSku" placeholder="Source SKU" inputmode="numeric" pattern="[0-9]*">
         <button class="btn" onclick="_onCloneFromSku()">Clone from SKU</button>
       </div>
     </div>
+    <div class="photo-sheet-hint">Camera (rapid) re-opens after each shot — tap Cancel in the camera to stop. Library picker supports multi-select (use “Select” in iOS Photos).</div>
     <div class="photo-sheet-grid" id="photoSheetGrid"></div>
   </div>
 </div>
@@ -237,6 +240,7 @@
   <button class="lightbox-close" onclick="closeLightbox()" title="Close">&times;</button>
   <button class="lightbox-nav lightbox-prev" onclick="lightboxPrev()" title="Previous">&#10094;</button>
   <img id="photoLightboxImg" alt="">
+  <video id="photoLightboxVid" controls playsinline preload="metadata" style="display:none"></video>
   <button class="lightbox-nav lightbox-next" onclick="lightboxNext()" title="Next">&#10095;</button>
   <div class="lightbox-counter" id="photoLightboxCounter"></div>
 </div>
