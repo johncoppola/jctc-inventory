@@ -120,25 +120,28 @@ function statusLabel(s) {
 // Build item.listings from the JSONB column, or fall back to legacy columns
 function buildListings(item) {
   if (Array.isArray(item.listings) && item.listings.length > 0) {
-    // Already have listings from the new JSONB column — normalise values
+    // Already have listings from the new JSONB column — normalise values.
+    // url + groupId added in chunk 6 for the repricing flow; default to empty.
     item.listings = item.listings.map(l => ({
       channel: l.channel || '',
       price: Number(l.price) || 0,
-      dateListed: l.dateListed || ''
+      dateListed: l.dateListed || '',
+      url: l.url || '',
+      groupId: l.groupId || ''
     }));
   } else {
     // Backward compat: construct from legacy columns
     item.listings = [];
     if (item.listingChannel || (Number(item.listPrice) > 0) || item.dateListed) {
-      item.listings.push({ channel: item.listingChannel || '', price: Number(item.listPrice) || 0, dateListed: item.dateListed || '' });
+      item.listings.push({ channel: item.listingChannel || '', price: Number(item.listPrice) || 0, dateListed: item.dateListed || '', url: '', groupId: '' });
     }
     if (item.listingChannel2 || (Number(item.listPrice2) > 0) || item.dateListed2) {
-      item.listings.push({ channel: item.listingChannel2 || '', price: Number(item.listPrice2) || 0, dateListed: item.dateListed2 || '' });
+      item.listings.push({ channel: item.listingChannel2 || '', price: Number(item.listPrice2) || 0, dateListed: item.dateListed2 || '', url: '', groupId: '' });
     }
   }
   // Ensure at least one empty row for rendering
   if (!item.listings.length) {
-    item.listings = [{ channel: '', price: 0, dateListed: '' }];
+    item.listings = [{ channel: '', price: 0, dateListed: '', url: '', groupId: '' }];
   }
   // Set virtual fields for sorting compatibility
   _syncVirtualFields(item);
@@ -155,7 +158,7 @@ function _syncVirtualFields(item) {
 function addListing(sku) {
   const item = DATA.items.find(i => i.sku === sku);
   if (!item) return;
-  item.listings.push({ channel: '', price: 0, dateListed: '' });
+  item.listings.push({ channel: '', price: 0, dateListed: '', url: '', groupId: '' });
   _syncVirtualFields(item);
   saveListings(sku);
   renderCurrentView();
@@ -527,6 +530,7 @@ function renderCurrentView() {
   if (active === 'dashboard') renderDashboard();
   else if (active === 'all') renderAll();
   else if (active === 'open') renderOpen();
+  else if (active === 'repricing') renderRepricing();
   else if (active === 'sold') renderSold();
   else if (active === 'lots') renderLots();
 }
@@ -812,7 +816,9 @@ function itemRow(item, showAllCols=true) {
   html += prHtml;
   let dtHtml = '<td class="listings-cell">';
   ls.forEach((l, idx) => {
-    dtHtml += `<div class="listing-entry"><input type="date" value="${l.dateListed||''}" onchange="updateListing(${item.sku},${idx},'dateListed',this.value)"></div>`;
+    const linkCls = l.url ? 'listing-link-icon has-url' : 'listing-link-icon';
+    const linkTitle = l.url ? `Listing details (URL set${l.groupId ? `, group ${l.groupId}` : ''})` : 'Add listing URL / group';
+    dtHtml += `<div class="listing-entry"><input type="date" value="${l.dateListed||''}" onchange="updateListing(${item.sku},${idx},'dateListed',this.value)"><button class="${linkCls}" onclick="openListingDetails(${item.sku},${idx})" title="${linkTitle}">&#128279;</button></div>`;
   });
   dtHtml += '</td>';
   html += dtHtml;
@@ -831,6 +837,62 @@ function itemRow(item, showAllCols=true) {
   html += `<td><button class="btn btn-danger btn-sm" onclick="deleteItem(${item.sku})">X</button></td>`;
   html += `</tr>`;
   return html;
+}
+
+// ===== LISTING DETAILS (URL + groupId) POPOVER =====
+let _listingDetailsCtx = null; // { sku, idx }
+
+function openListingDetails(sku, idx) {
+  const item = DATA.items.find(i => i.sku === sku);
+  if (!item || !item.listings[idx]) return;
+  const l = item.listings[idx];
+  let modal = document.getElementById('listingDetailsModal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.className = 'modal-overlay';
+    modal.id = 'listingDetailsModal';
+    modal.innerHTML = `
+      <div class="modal" style="max-width:480px">
+        <h2>Listing Details</h2>
+        <p class="listing-details-sub" id="listingDetailsSub"></p>
+        <div class="form-group" style="margin-bottom:12px">
+          <label>Listing URL</label>
+          <input type="url" id="listingDetailsUrl" placeholder="https://..." style="width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:8px 12px;border-radius:6px;font-size:13px">
+        </div>
+        <div class="form-group" style="margin-bottom:16px">
+          <label>Group ID <span style="color:var(--text-dim);font-weight:400">— share across SKUs that point to one multi-quantity listing</span></label>
+          <input type="text" id="listingDetailsGroupId" placeholder="e.g., G-2026-04-A (or leave blank for solo)" style="width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:8px 12px;border-radius:6px;font-size:13px">
+        </div>
+        <div class="modal-actions">
+          <button class="btn" onclick="closeListingDetails()">Cancel</button>
+          <button class="btn btn-primary" onclick="saveListingDetails()">Save</button>
+        </div>
+      </div>`;
+    document.body.appendChild(modal);
+  }
+  _listingDetailsCtx = { sku, idx };
+  document.getElementById('listingDetailsSub').textContent = `SKU ${sku} · ${l.channel || '(no channel)'} · $${Number(l.price)||0}`;
+  document.getElementById('listingDetailsUrl').value = l.url || '';
+  document.getElementById('listingDetailsGroupId').value = l.groupId || '';
+  modal.classList.add('show');
+}
+
+function closeListingDetails() {
+  const m = document.getElementById('listingDetailsModal');
+  if (m) m.classList.remove('show');
+  _listingDetailsCtx = null;
+}
+
+async function saveListingDetails() {
+  if (!_listingDetailsCtx) return;
+  const { sku, idx } = _listingDetailsCtx;
+  const item = DATA.items.find(i => i.sku === sku);
+  if (!item || !item.listings[idx]) { closeListingDetails(); return; }
+  item.listings[idx].url = document.getElementById('listingDetailsUrl').value.trim();
+  item.listings[idx].groupId = document.getElementById('listingDetailsGroupId').value.trim();
+  saveListings(sku);
+  closeListingDetails();
+  renderCurrentView();
 }
 
 // ===== STALE LISTINGS FILTER =====
@@ -1422,6 +1484,226 @@ function updateLotFilters() {
   });
 }
 
+// ===== REPRICING QUEUE =====
+let _repriceQueue = [];
+
+function _itemFor(sku) {
+  return DATA.items.find(i => i.sku === sku);
+}
+
+async function loadRepriceQueue() {
+  try {
+    _repriceQueue = await supabase.select(
+      'reprice_queue',
+      'status=eq.pending&order=is_floor_hit.desc,queued_at.desc'
+    );
+  } catch (e) {
+    console.error('loadRepriceQueue failed:', e);
+    _repriceQueue = [];
+    toast('Error loading reprice queue');
+  }
+  updateRepricingBadge();
+}
+
+function updateRepricingBadge() {
+  const badge = document.getElementById('repricingBadge');
+  if (!badge) return;
+  const n = _repriceQueue.length;
+  badge.textContent = n;
+  badge.style.display = n > 0 ? '' : 'none';
+}
+
+async function renderRepricing() {
+  await loadRepriceQueue();
+  const wrap = document.getElementById('repricingQueueWrap');
+  if (!_repriceQueue.length) {
+    wrap.innerHTML = '<div class="reprice-empty">Nothing in the queue. The daily scan runs at 6 AM — or click "Run Scan Now".</div>';
+    document.getElementById('repriceCounts').textContent = '0 pending';
+    return;
+  }
+  const drops = _repriceQueue.filter(r => !r.is_floor_hit);
+  const floors = _repriceQueue.filter(r => r.is_floor_hit);
+  document.getElementById('repriceCounts').textContent =
+    `${drops.length} drop${drops.length===1?'':'s'} · ${floors.length} floor hit${floors.length===1?'':'s'}`;
+  let html = '';
+  if (floors.length) {
+    html += '<h3 class="reprice-section-title">Floor hits — pick an action</h3>';
+    html += _renderRepriceTable(floors, true);
+  }
+  if (drops.length) {
+    html += '<h3 class="reprice-section-title">Proposed drops</h3>';
+    html += _renderRepriceTable(drops, false);
+  }
+  wrap.innerHTML = html;
+}
+
+function _renderRepriceTable(rows, isFloor) {
+  let h = '<table class="reprice-table"><thead><tr>'
+    + '<th>SKU</th><th>Item</th><th>Channel</th>'
+    + (isFloor ? '<th>Original → Now</th>' : '<th>Current → Proposed</th>')
+    + '<th>Days at $</th><th>Why</th><th>Actions</th></tr></thead><tbody>';
+  rows.forEach(r => {
+    const item = _itemFor(r.item_sku);
+    const itemLabel = item
+      ? `${item.brand || ''} ${item.model || ''}`.trim() || '(no name)'
+      : `SKU ${r.item_sku}`;
+    const url = _listingUrlFor(item, r.channel);
+    const chCell = url
+      ? `${r.channel} <a href="${url}" target="_blank" rel="noopener" class="reprice-link" title="Open live listing">↗</a>`
+      : r.channel;
+    const priceCell = isFloor
+      ? `$${Math.round(r.original_list_price)} → <strong>$${Math.round(r.current_price)}</strong>`
+      : `$${Math.round(r.current_price)} → <strong class="reprice-proposed">$${Math.round(r.proposed_price)}</strong>`
+        + (r.needs_repost ? ' <span class="reprice-repost-tag" title="FBM also benefits from a repost">+repost</span>' : '');
+    const groupTag = r.group_id
+      ? ` <span class="reprice-group-tag" title="Multi-qty listing — drops apply to the whole group">grp</span>`
+      : '';
+    const actions = isFloor
+      ? `<button class="btn btn-sm" onclick="floorAction(${r.id},'relist')">Relist</button>
+         <button class="btn btn-sm" onclick="floorAction(${r.id},'bundle')">Bundle</button>
+         <button class="btn btn-sm" onclick="floorAction(${r.id},'donate')">Donate</button>
+         <button class="btn btn-sm reprice-override" onclick="floorAction(${r.id},'override')" title="Drop one more 10% step past the floor">Override</button>`
+      : `<button class="btn btn-sm btn-primary" onclick="approveReprice(${r.id})">Approved &amp; Live</button>
+         ${r.needs_repost ? `<button class="btn btn-sm reprice-repost-btn ${r.reposted_at ? 'is-done' : ''}" onclick="markReposted(${r.id})">${r.reposted_at ? '✓ Reposted' : 'Reposted'}</button>` : ''}
+         <button class="btn btn-sm" onclick="dismissReprice(${r.id})">Dismiss</button>`;
+    h += `<tr><td>${r.item_sku}${groupTag}</td><td>${itemLabel}</td><td>${chCell}</td>`
+      + `<td class="money-cell">${priceCell}</td>`
+      + `<td>${r.days_at_current_price}d</td>`
+      + `<td class="reprice-notes">${r.notes || ''}</td>`
+      + `<td class="reprice-actions">${actions}</td></tr>`;
+  });
+  h += '</tbody></table>';
+  return h;
+}
+
+function _listingUrlFor(item, channel) {
+  if (!item || !item.listings) return '';
+  const entry = item.listings.find(l => (l.channel || '') === channel);
+  return entry && entry.url ? entry.url : '';
+}
+
+// Approve a non-floor drop. Writes the new price to price_history, updates
+// the listings JSONB entry, and marks the queue row approved.
+async function approveReprice(id) {
+  const row = _repriceQueue.find(r => r.id === id);
+  if (!row) return;
+  const item = _itemFor(row.item_sku);
+  if (!item) { toast('SKU not found'); return; }
+  // Group dedupe: if this row has a group_id, apply to every SKU sharing it.
+  const targets = row.group_id
+    ? DATA.items.filter(i =>
+        (i.listings || []).some(l => (l.channel || '') === row.channel && l.groupId === row.group_id))
+    : [item];
+  try {
+    for (const t of targets) {
+      const idx = (t.listings || []).findIndex(l => (l.channel || '') === row.channel);
+      if (idx < 0) continue;
+      t.listings[idx].price = Number(row.proposed_price);
+      await supabase.update('items', `sku=eq.${t.sku}`, { listings: t.listings });
+      await supabase.insert('price_history', [{
+        item_sku: t.sku,
+        channel: row.channel,
+        price: Number(row.proposed_price),
+        source: 'reprice_approved'
+      }]);
+      _snapshotItem(t);
+    }
+    await supabase.update('reprice_queue', `id=eq.${id}`,
+      { status: 'approved', decided_at: new Date().toISOString() });
+    toast(`Approved $${Math.round(row.proposed_price)} on ${row.channel}${targets.length>1?` (${targets.length} SKUs)`:''}`);
+    renderRepricing();
+  } catch (e) {
+    console.error('approveReprice failed:', e);
+    toast('Error approving — check console');
+  }
+}
+
+async function dismissReprice(id) {
+  try {
+    await supabase.update('reprice_queue', `id=eq.${id}`,
+      { status: 'dismissed', decided_at: new Date().toISOString() });
+    toast('Dismissed');
+    renderRepricing();
+  } catch (e) {
+    console.error('dismissReprice failed:', e);
+    toast('Error dismissing — check console');
+  }
+}
+
+// FBM "Reposted" toggle. Stamps reposted_at without closing the row, so
+// you can still hit "Approved & Live" after refreshing the listing.
+async function markReposted(id) {
+  const row = _repriceQueue.find(r => r.id === id);
+  if (!row) return;
+  const stamp = row.reposted_at ? null : new Date().toISOString();
+  try {
+    await supabase.update('reprice_queue', `id=eq.${id}`, { reposted_at: stamp });
+    toast(stamp ? 'Marked reposted' : 'Unmarked');
+    renderRepricing();
+  } catch (e) {
+    console.error('markReposted failed:', e);
+    toast('Error updating — check console');
+  }
+}
+
+// Handle the four floor-hit actions. 'override' immediately queues a fresh
+// 10% drop (one-shot bypass of the floor); the other three just record
+// the decision and suppress re-flagging for 7 days.
+async function floorAction(id, action) {
+  const row = _repriceQueue.find(r => r.id === id);
+  if (!row) return;
+  if (!confirm(`Mark SKU ${row.item_sku} (${row.channel}) as "${action}"?`)) return;
+  try {
+    await supabase.update('reprice_queue', `id=eq.${id}`, {
+      status: 'approved',
+      decision: action,
+      decided_at: new Date().toISOString()
+    });
+    if (action === 'override') {
+      const proposed = Math.max(0, Math.round(Number(row.current_price) * 0.9 / 5) * 5);
+      await supabase.insert('reprice_queue', [{
+        item_sku: row.item_sku,
+        channel: row.channel,
+        group_id: row.group_id,
+        current_price: row.current_price,
+        proposed_price: proposed,
+        original_list_price: row.original_list_price,
+        days_at_current_price: row.days_at_current_price,
+        cadence_step_days: row.cadence_step_days,
+        comp_source: 'flat_10pct_override',
+        is_floor_hit: false,
+        needs_repost: row.channel === 'FBM',
+        notes: `Override: drop past 50% floor. Was $${Math.round(row.current_price)} → $${proposed}.`,
+        status: 'pending'
+      }]);
+      toast(`Override — queued $${proposed} drop`);
+    } else {
+      toast(`${action[0].toUpperCase()+action.slice(1)} recorded — won't re-flag for 7 days`);
+    }
+    renderRepricing();
+  } catch (e) {
+    console.error('floorAction failed:', e);
+    toast('Error recording decision — check console');
+  }
+}
+
+// Manual trigger for the daily cron. Useful when John wants to scan
+// mid-day after editing prices.
+async function runRepricingReportNow() {
+  toast('Running scan…');
+  try {
+    const result = await supabase.rpc('run_repricing_report', {});
+    const r = Array.isArray(result) ? result[0] : result;
+    const drops = r ? r.queued_drops : 0;
+    const floors = r ? r.queued_floor_hits : 0;
+    toast(`Scan: ${drops} drop${drops===1?'':'s'}, ${floors} floor hit${floors===1?'':'s'}`);
+    renderRepricing();
+  } catch (e) {
+    console.error('runRepricingReportNow failed:', e);
+    toast('Error running scan — check console');
+  }
+}
+
 // ===== EXPORT / IMPORT =====
 function exportData() {
   const blob = new Blob([JSON.stringify(DATA, null, 2)], {type: 'application/json'});
@@ -1527,6 +1809,7 @@ async function init() {
   updateCategorySelect();
   renderDashboard();
   updateBadges();
+  loadRepriceQueue(); // populates the Repricing tab badge in the background
 }
 
 // Update the category dropdown in the Add Item modal to use dynamic options

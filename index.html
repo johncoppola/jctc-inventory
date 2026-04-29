@@ -24,6 +24,7 @@
     <div class="tab active" data-tab="dashboard">Dashboard</div>
     <div class="tab" data-tab="all">All Inventory</div>
     <div class="tab" data-tab="open">Open Inventory</div>
+    <div class="tab" data-tab="repricing">Repricing<span class="tab-badge" id="repricingBadge" style="display:none">0</span></div>
     <div class="tab" data-tab="sold">Sold Items</div>
     <div class="tab" data-tab="lots">Lots / Pallets</div>
   </div>
@@ -119,6 +120,18 @@
       </div>
     </div>
     <div class="table-wrap" id="openTable"></div>
+  </div>
+
+  <!-- Repricing View -->
+  <div id="view-repricing" class="view" style="display:none">
+    <div class="toolbar">
+      <div class="reprice-toolbar-info">
+        <span id="repriceCounts" class="reprice-counts">—</span>
+        <span class="reprice-toolbar-hint">Drops auto-update price after on-platform edit. Floor hits need a decision.</span>
+      </div>
+      <button class="btn btn-primary" onclick="runRepricingReportNow()">Run Scan Now</button>
+    </div>
+    <div id="repricingQueueWrap"></div>
   </div>
 
   <!-- Sold Items View -->

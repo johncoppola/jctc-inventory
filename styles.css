@@ -273,3 +273,34 @@ td.photo-cell.has-photos .photo-btn { color: var(--accent); border-color: rgba(7
 /* Toast notification */
 .toast { position: fixed; bottom: 20px; right: 20px; background: var(--surface2); border: 1px solid var(--green); color: var(--green); padding: 12px 20px; border-radius: 8px; font-size: 13px; z-index: 200; transform: translateY(100px); opacity: 0; transition: all .3s; }
 .toast.show { transform: translateY(0); opacity: 1; }
+
+/* ===== Repricing tab (chunk 6) ===== */
+.tab .tab-badge { background: var(--orange); color: #1a1d27; font-size: 11px; font-weight: 700; padding: 1px 7px; border-radius: 10px; margin-left: 6px; }
+.reprice-toolbar-info { display: flex; align-items: center; gap: 12px; flex: 1; }
+.reprice-counts { font-weight: 600; color: var(--text); }
+.reprice-toolbar-hint { color: var(--text-dim); font-size: 12px; }
+.reprice-section-title { font-size: 13px; color: var(--text-dim); margin: 16px 4px 8px; text-transform: uppercase; letter-spacing: .5px; font-weight: 600; }
+.reprice-section-title:first-child { margin-top: 4px; }
+.reprice-empty { padding: 32px; text-align: center; color: var(--text-dim); border: 1px dashed var(--border); border-radius: 8px; margin-top: 12px; }
+.reprice-table { width: 100%; border-collapse: collapse; font-size: 13px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; table-layout: auto; }
+.reprice-table th, .reprice-table td { padding: 10px 14px; border-top: 1px solid var(--border); text-align: left; vertical-align: middle; white-space: normal; }
+.reprice-table th { background: var(--surface2); color: var(--text-dim); font-size: 11px; text-transform: uppercase; letter-spacing: .5px; border-top: none; position: static; }
+.reprice-table tr:hover { background: rgba(79,140,255,.04); }
+.reprice-proposed { color: var(--green); }
+.reprice-link { color: var(--accent); text-decoration: none; margin-left: 4px; font-size: 12px; }
+.reprice-link:hover { text-decoration: underline; }
+.reprice-repost-tag, .reprice-group-tag { display: inline-block; font-size: 10px; padding: 1px 6px; border-radius: 8px; margin-left: 6px; text-transform: uppercase; letter-spacing: .5px; font-weight: 600; vertical-align: middle; }
+.reprice-repost-tag { background: rgba(251,146,60,.15); color: var(--orange); }
+.reprice-group-tag { background: rgba(79,140,255,.15); color: var(--accent); }
+.reprice-notes { color: var(--text-dim); font-size: 12px; max-width: 360px; }
+.reprice-actions { white-space: nowrap; }
+.reprice-actions .btn { margin-right: 4px; }
+.reprice-override { border-color: var(--yellow); color: var(--yellow); }
+.reprice-override:hover { background: rgba(251,191,36,.1); }
+.reprice-repost-btn.is-done { border-color: var(--green); color: var(--green); }
+
+/* Listing details (URL + groupId) trigger icon */
+.listing-link-icon { background: transparent; border: 1px solid transparent; color: var(--text-dim); cursor: pointer; padding: 2px 6px; border-radius: 4px; font-size: 12px; margin-left: 4px; transition: all .15s; }
+.listing-link-icon:hover { color: var(--accent); border-color: var(--border); background: var(--surface2); }
+.listing-link-icon.has-url { color: var(--green); }
+.listing-details-sub { color: var(--text-dim); font-size: 12px; margin-bottom: 14px; }
