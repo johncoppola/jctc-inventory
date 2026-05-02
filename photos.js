@@ -256,26 +256,19 @@ async function _onPhotoFileInput(input) {
 }
 
 // ===== IN-APP CAMERA (burst mode) =====
-// Uses getUserMedia for a live preview + canvas capture, so each shutter tap
-// stores a photo immediately without the iOS "Use Photo / Retake" prompt.
-// Video recording uses MediaRecorder on the same stream (re-acquired with audio)
-// to bypass iOS Safari's aggressive transcoding of <input type=file> video capture.
+// Photos: getUserMedia live preview + canvas capture, so each shutter tap stores
+// a photo immediately without the iOS "Use Photo / Retake" prompt.
+// Videos: the record button hands off to the native iOS Camera via a hidden
+// <input type=file capture=environment>. iOS provides full image stabilization
+// (OIS / cinematic) which getUserMedia does NOT expose to the browser. After
+// the user taps "Use Video", we upload the file and restart the in-app preview
+// stream so the burst session continues.
 let _incamStream = null;
 let _incamFacing = 'environment';
 let _incamCount = 0;
 let _incamSku = null;
 let _incamBusy = false;
-
-// Recording state
-let _incamRecorder = null;
-let _incamRecChunks = [];
-let _incamRecording = false;
-let _incamRecStartedAt = 0;
-let _incamRecTimer = null;
-let _incamRecAutoStop = null;
-let _incamRecMime = '';
-const INCAM_REC_MAX_MS = 60000;
-const INCAM_REC_BITRATE = 8000000;
+let _awaitingNativeVideo = false;
 
 async function openInAppCamera() {
   if (_photoSheetSku == null) return;
@@ -293,17 +286,13 @@ async function openInAppCamera() {
 async function _startIncamStream() {
   try {
     if (_incamStream) { _incamStream.getTracks().forEach(t => t.stop()); _incamStream = null; }
-    // Request audio up-front so MediaRecorder can use the same stream when
-    // recording — iOS Safari will not reliably encode a stream composed from
-    // two different getUserMedia calls. The <video> element stays muted so
-    // the user doesn't hear themselves during preview.
     _incamStream = await navigator.mediaDevices.getUserMedia({
       video: {
         facingMode: { ideal: _incamFacing },
         width:  { ideal: 4096 },
         height: { ideal: 2160 }
       },
-      audio: true
+      audio: false
     });
     const video = document.getElementById('incamVideo');
     video.srcObject = _incamStream;
@@ -354,23 +343,7 @@ async function captureInAppPhoto() {
 }
 
 function closeInAppCamera() {
-  // If a recording is in flight, abort it so the partial blob doesn't upload.
-  if (_incamRecording) {
-    _incamRecording = false;
-    if (_incamRecAutoStop) { clearTimeout(_incamRecAutoStop); _incamRecAutoStop = null; }
-    if (_incamRecTimer) { clearInterval(_incamRecTimer); _incamRecTimer = null; }
-    if (_incamRecorder) {
-      try { _incamRecorder.ondataavailable = null; _incamRecorder.onstop = null; _incamRecorder.stop(); } catch (_) {}
-    }
-    _incamRecorder = null;
-    _incamRecChunks = [];
-    const recBtn = document.getElementById('incamRecBtn');
-    const counter = document.getElementById('incamCounter');
-    const shutter = document.getElementById('incamShutter');
-    if (recBtn) recBtn.classList.remove('recording');
-    if (counter) counter.classList.remove('recording');
-    if (shutter) shutter.disabled = false;
-  }
+  _awaitingNativeVideo = false;
   if (_incamStream) { _incamStream.getTracks().forEach(t => t.stop()); _incamStream = null; }
   const video = document.getElementById('incamVideo');
   if (video) video.srcObject = null;
@@ -378,163 +351,79 @@ function closeInAppCamera() {
   _incamSku = null;
 }
 
-// ===== VIDEO RECORDING =====
-// Pick the best mimetype the browser supports. mp4/h264 is preferred so iOS can
-// play the file natively; webm/vp9 is the fallback for Chrome/Firefox/Android.
-function _pickVideoMime() {
-  if (typeof MediaRecorder === 'undefined') return null;
-  const candidates = [
-    'video/mp4;codecs=avc1,mp4a',
-    'video/mp4;codecs=avc1',
-    'video/mp4',
-    'video/webm;codecs=vp9,opus',
-    'video/webm;codecs=vp8,opus',
-    'video/webm'
-  ];
-  for (const t of candidates) {
-    try { if (MediaRecorder.isTypeSupported(t)) return t; } catch (_) {}
-  }
-  return '';
-}
+// ===== VIDEO RECORDING (native iOS camera) =====
+// The record button releases the in-app preview stream and clicks a hidden
+// <input type=file accept=video/* capture=environment>. iOS takes over with
+// the system Camera app — full OIS, cinematic stabilization, Apple's encoder.
+// On "Use Video", onchange fires with the .mov; we upload it and restart the
+// in-app preview so the user can keep shooting photos or record again. On
+// "Cancel", onchange never fires — visibilitychange catches the return and
+// restarts the stream anyway.
 
-async function toggleIncamRecording() {
-  if (_incamRecording) await _stopIncamRecording();
-  else await _startIncamRecording();
-}
-
-async function _startIncamRecording() {
+function toggleIncamRecording() {
   if (_incamSku == null) return;
-  if (typeof MediaRecorder === 'undefined') { toast('Video recording not supported on this browser'); return; }
-  if (!_incamStream) { toast('Camera not ready'); return; }
-  // Use the existing preview stream directly — it already has the audio track
-  // (requested up-front in _startIncamStream). No track composition, no
-  // srcObject swap, no second getUserMedia call.
-  _incamRecMime = _pickVideoMime() || '';
-  try {
-    const opts = { videoBitsPerSecond: INCAM_REC_BITRATE };
-    if (_incamRecMime) opts.mimeType = _incamRecMime;
-    _incamRecorder = new MediaRecorder(_incamStream, opts);
-  } catch (e) {
-    console.error('MediaRecorder init failed:', e);
-    toast('Recorder failed to start');
-    return;
+  if (_awaitingNativeVideo) return;
+  const input = document.getElementById('incamVideoFileInput');
+  if (!input) { toast('Video input not found'); return; }
+  _awaitingNativeVideo = true;
+  // Release the camera hardware so iOS's native Camera app can claim it cleanly.
+  if (_incamStream) {
+    _incamStream.getTracks().forEach(t => t.stop());
+    _incamStream = null;
+    const video = document.getElementById('incamVideo');
+    if (video) video.srcObject = null;
   }
-  _incamRecChunks = [];
-  _incamRecorder.ondataavailable = (e) => { if (e.data && e.data.size) _incamRecChunks.push(e.data); };
-  _incamRecorder.onstop = _onIncamRecorderStop;
-  // Timeslice so chunks accumulate during recording. Without this, iOS Safari
-  // emits all data in a single dataavailable that fires after stop() — and if
-  // the source tracks are stopped before that fires, the blob is lost.
-  _incamRecorder.start(500);
-  _incamRecording = true;
-  _incamRecStartedAt = Date.now();
-  // UI
-  const recBtn = document.getElementById('incamRecBtn');
-  const counter = document.getElementById('incamCounter');
-  const shutter = document.getElementById('incamShutter');
-  const switchBtn = document.getElementById('incamSwitchBtn');
-  if (recBtn) recBtn.classList.add('recording');
-  if (counter) counter.classList.add('recording');
-  if (shutter) shutter.disabled = true;
-  if (switchBtn) switchBtn.disabled = true;
-  _updateIncamRecTimer();
-  _incamRecTimer = setInterval(_updateIncamRecTimer, 250);
-  // Hard cap so a forgotten recording doesn't chew through storage.
-  _incamRecAutoStop = setTimeout(() => { if (_incamRecording) _stopIncamRecording(); }, INCAM_REC_MAX_MS);
+  input.value = '';
+  input.click();
 }
 
-function _updateIncamRecTimer() {
-  const counter = document.getElementById('incamCounter');
-  if (!counter || !_incamRecording) return;
-  const s = Math.floor((Date.now() - _incamRecStartedAt) / 1000);
-  const mm = String(Math.floor(s / 60));
-  const ss = String(s % 60).padStart(2, '0');
-  counter.textContent = `● REC ${mm}:${ss}`;
-}
-
-async function _stopIncamRecording() {
-  if (!_incamRecording || !_incamRecorder) return;
-  _incamRecording = false;
-  if (_incamRecAutoStop) { clearTimeout(_incamRecAutoStop); _incamRecAutoStop = null; }
-  if (_incamRecTimer) { clearInterval(_incamRecTimer); _incamRecTimer = null; }
-  // UI reset (the upload kicks off from onstop).
-  const recBtn = document.getElementById('incamRecBtn');
-  const counter = document.getElementById('incamCounter');
-  const shutter = document.getElementById('incamShutter');
-  const switchBtn = document.getElementById('incamSwitchBtn');
-  if (recBtn) recBtn.classList.remove('recording');
-  if (counter) { counter.classList.remove('recording'); counter.textContent = `${_incamCount} captured`; }
-  if (shutter) shutter.disabled = false;
-  if (switchBtn) switchBtn.disabled = false;
-  // Wait for the recorder's onstop to fire before tearing down the stream.
-  // _onIncamRecorderStop runs synchronously inside this handler and kicks off
-  // the upload, so by the time we resolve we know the blob is in flight.
-  const recorder = _incamRecorder;
-  await new Promise((resolve) => {
-    if (!recorder) { resolve(); return; }
-    const original = recorder.onstop;
-    let done = false;
-    const finish = (e) => {
-      if (done) return;
-      done = true;
-      try { if (original) original(e); } finally { resolve(); }
-    };
-    recorder.onstop = finish;
-    recorder.onerror = finish;
-    try { recorder.stop(); } catch (_) { finish(); }
-    // Belt-and-suspenders: if the browser never fires onstop, give up after 2s
-    // and proceed to restart the stream so the user isn't stuck.
-    setTimeout(finish, 2000);
-  });
-  // Preview stream is shared with the recorder — leave it running for photos.
-}
-
-function _onIncamRecorderStop() {
-  const chunks = _incamRecChunks;
-  _incamRecChunks = [];
-  const mime = _incamRecMime || 'video/mp4';
-  _incamRecorder = null;
-  if (_incamSku == null) return;
-  if (!chunks.length) {
-    console.warn('Recorder stopped with no chunks — recording was not saved');
-    toast('Video did not record — try again');
-    return;
-  }
-  // Strip codec parameters from the MIME type before uploading: the
-  // storage bucket's allowed_mime_types list contains bare types only
-  // ('video/mp4'), and an exact-match check fails for 'video/mp4;codecs=avc1'.
-  const ext = /mp4/i.test(mime) ? 'mp4' : 'webm';
-  const cleanType = ext === 'mp4' ? 'video/mp4' : 'video/webm';
-  const blob = new Blob(chunks, { type: cleanType });
-  const file = new File([blob], `incam-${Date.now()}.${ext}`, { type: cleanType });
-  // Bump the in-camera counter so the user sees immediate feedback before
-  // the upload finishes — it's the same counter photos use, treating videos
-  // as another captured item in the burst session.
-  _incamCount++;
-  const counterEl = document.getElementById('incamCounter');
-  if (counterEl && !_incamRecording) counterEl.textContent = `${_incamCount} captured`;
-  const sizeMb = (blob.size / 1048576).toFixed(1);
-  console.log(`Uploading video: ${file.name} type=${cleanType} size=${sizeMb} MB sku=${_incamSku}`);
-  toast(`Uploading video (${sizeMb} MB)…`);
-  // Track video uploads separately so we can surface a video-specific
-  // success/failure toast that isn't drowned out by photo upload chatter.
+async function _onIncamVideoFileInput(input) {
+  const files = Array.from(input.files || []);
+  input.value = '';
   const sku = _incamSku;
-  (async () => {
-    const before = getPhotoCount(sku);
-    try {
-      await uploadPhotosForSku(sku, [file]);
-    } catch (e) {
-      console.error('Video upload threw:', e);
-    }
-    const after = getPhotoCount(sku);
-    if (after > before) {
-      toast(`Video saved to SKU ${sku}`);
-    } else {
-      console.error('Video upload finished but no row was inserted — bucket likely rejected the file');
-      toast('Video upload failed — see console');
-    }
-  })();
+  if (files.length && sku != null) {
+    const file = files[0];
+    // Optimistic counter bump — same UX as photo burst.
+    _incamCount++;
+    const counterEl = document.getElementById('incamCounter');
+    if (counterEl) counterEl.textContent = `${_incamCount} captured`;
+    const sizeMb = (file.size / 1048576).toFixed(1);
+    console.log(`Uploading video: ${file.name} type=${file.type} size=${sizeMb} MB sku=${sku}`);
+    toast(`Uploading video (${sizeMb} MB)…`);
+    (async () => {
+      const before = getPhotoCount(sku);
+      try { await uploadPhotosForSku(sku, [file]); }
+      catch (e) { console.error('Video upload threw:', e); }
+      const after = getPhotoCount(sku);
+      if (after > before) toast(`Video saved to SKU ${sku}`);
+      else { console.error('Video upload finished but no row was inserted — bucket likely rejected the file'); toast('Video upload failed — see console'); }
+    })();
+  }
+  await _resumeFromNativeVideo();
 }
+
+async function _resumeFromNativeVideo() {
+  _awaitingNativeVideo = false;
+  const overlay = document.getElementById('incamOverlay');
+  if (_incamSku != null && overlay && overlay.classList.contains('show')) {
+    await _startIncamStream();
+  }
+}
+
+// Cancel path: native camera dismissed without picking a file → onchange never
+// fires. When the page regains visibility, restart the stream if we were
+// waiting on a video and onchange didn't already handle it.
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState !== 'visible') return;
+  if (!_awaitingNativeVideo) return;
+  // Give onchange a moment to fire first (success path).
+  setTimeout(() => {
+    if (!_awaitingNativeVideo) return;
+    const input = document.getElementById('incamVideoFileInput');
+    if (input && input.files && input.files.length) return; // success path will handle it
+    _resumeFromNativeVideo();
+  }, 400);
+});
 
 // Esc closes the in-app camera; Space/Enter triggers the shutter.
 document.addEventListener('keydown', (e) => {

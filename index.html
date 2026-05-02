@@ -261,6 +261,7 @@
   <div class="incam-bottombar">
     <button class="incam-shutter" id="incamShutter" onclick="captureInAppPhoto()" aria-label="Shutter"></button>
     <button class="incam-record" id="incamRecBtn" onclick="toggleIncamRecording()" aria-label="Record video"><span class="incam-record-dot"></span></button>
+    <input type="file" id="incamVideoFileInput" accept="video/*" capture="environment" class="photo-file-input" onchange="_onIncamVideoFileInput(this)">
   </div>
 </div>
 
