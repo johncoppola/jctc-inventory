@@ -274,6 +274,7 @@ let _incamRecStartedAt = 0;
 let _incamRecTimer = null;
 let _incamRecAutoStop = null;
 let _incamRecMime = '';
+let _incamRecAudioStream = null; // separate audio-only stream so we don't disturb the video preview
 const INCAM_REC_MAX_MS = 60000;
 const INCAM_REC_BITRATE = 8000000;
 
@@ -360,6 +361,7 @@ function closeInAppCamera() {
     }
     _incamRecorder = null;
     _incamRecChunks = [];
+    if (_incamRecAudioStream) { _incamRecAudioStream.getTracks().forEach(t => t.stop()); _incamRecAudioStream = null; }
     const recBtn = document.getElementById('incamRecBtn');
     const counter = document.getElementById('incamCounter');
     const shutter = document.getElementById('incamShutter');
@@ -401,37 +403,34 @@ async function toggleIncamRecording() {
 async function _startIncamRecording() {
   if (_incamSku == null) return;
   if (typeof MediaRecorder === 'undefined') { toast('Video recording not supported on this browser'); return; }
-  // Re-acquire the stream with audio enabled. The photo-mode stream is audio:false
-  // to skip the mic prompt; recording needs audio so we restart it here.
+  if (!_incamStream) { toast('Camera not ready'); return; }
+  // Don't touch the video preview — iOS Safari can leave a black frame when
+  // srcObject is swapped mid-session. Instead, grab a separate audio-only
+  // stream and compose it with the existing video track for the recorder.
   try {
-    if (_incamStream) { _incamStream.getTracks().forEach(t => t.stop()); _incamStream = null; }
-    _incamStream = await navigator.mediaDevices.getUserMedia({
-      video: {
-        facingMode: { ideal: _incamFacing },
-        width:  { ideal: 1920 },
-        height: { ideal: 1080 }
-      },
-      audio: true
-    });
-    const video = document.getElementById('incamVideo');
-    video.srcObject = _incamStream;
-    try { await video.play(); } catch (_) {}
+    _incamRecAudioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
   } catch (e) {
-    console.error('record-mode getUserMedia failed:', e);
-    toast('Camera/mic access denied');
-    // Try to restore photo-mode stream so the user isn't stuck on a black preview.
-    await _startIncamStream();
-    return;
+    console.error('mic getUserMedia failed:', e);
+    toast('Recording without audio (mic denied)');
+    _incamRecAudioStream = null;
+  }
+  const videoTrack = _incamStream.getVideoTracks()[0];
+  if (!videoTrack) { toast('Camera track unavailable'); return; }
+  const recordStream = new MediaStream();
+  recordStream.addTrack(videoTrack);
+  if (_incamRecAudioStream) {
+    const audioTrack = _incamRecAudioStream.getAudioTracks()[0];
+    if (audioTrack) recordStream.addTrack(audioTrack);
   }
   _incamRecMime = _pickVideoMime() || '';
   try {
     const opts = { videoBitsPerSecond: INCAM_REC_BITRATE };
     if (_incamRecMime) opts.mimeType = _incamRecMime;
-    _incamRecorder = new MediaRecorder(_incamStream, opts);
+    _incamRecorder = new MediaRecorder(recordStream, opts);
   } catch (e) {
     console.error('MediaRecorder init failed:', e);
     toast('Recorder failed to start');
-    await _startIncamStream();
+    if (_incamRecAudioStream) { _incamRecAudioStream.getTracks().forEach(t => t.stop()); _incamRecAudioStream = null; }
     return;
   }
   _incamRecChunks = [];
@@ -501,9 +500,11 @@ async function _stopIncamRecording() {
     // and proceed to restart the stream so the user isn't stuck.
     setTimeout(finish, 2000);
   });
-  // Drop the audio track and restart photo-mode stream so the next shutter tap
-  // captures full-res stills again.
-  await _startIncamStream();
+  // Stop only the dedicated audio track; the video preview was never touched.
+  if (_incamRecAudioStream) {
+    _incamRecAudioStream.getTracks().forEach(t => t.stop());
+    _incamRecAudioStream = null;
+  }
 }
 
 function _onIncamRecorderStop() {
