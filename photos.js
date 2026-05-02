@@ -500,17 +500,40 @@ function _onIncamRecorderStop() {
     toast('Video did not record — try again');
     return;
   }
+  // Strip codec parameters from the MIME type before uploading: the
+  // storage bucket's allowed_mime_types list contains bare types only
+  // ('video/mp4'), and an exact-match check fails for 'video/mp4;codecs=avc1'.
   const ext = /mp4/i.test(mime) ? 'mp4' : 'webm';
-  const blob = new Blob(chunks, { type: mime });
-  const file = new File([blob], `incam-${Date.now()}.${ext}`, { type: mime });
+  const cleanType = ext === 'mp4' ? 'video/mp4' : 'video/webm';
+  const blob = new Blob(chunks, { type: cleanType });
+  const file = new File([blob], `incam-${Date.now()}.${ext}`, { type: cleanType });
   // Bump the in-camera counter so the user sees immediate feedback before
   // the upload finishes — it's the same counter photos use, treating videos
   // as another captured item in the burst session.
   _incamCount++;
   const counterEl = document.getElementById('incamCounter');
   if (counterEl && !_incamRecording) counterEl.textContent = `${_incamCount} captured`;
-  toast(`Uploading video (${(blob.size / 1048576).toFixed(1)} MB)…`);
-  uploadPhotosForSku(_incamSku, [file]);
+  const sizeMb = (blob.size / 1048576).toFixed(1);
+  console.log(`Uploading video: ${file.name} type=${cleanType} size=${sizeMb} MB sku=${_incamSku}`);
+  toast(`Uploading video (${sizeMb} MB)…`);
+  // Track video uploads separately so we can surface a video-specific
+  // success/failure toast that isn't drowned out by photo upload chatter.
+  const sku = _incamSku;
+  (async () => {
+    const before = getPhotoCount(sku);
+    try {
+      await uploadPhotosForSku(sku, [file]);
+    } catch (e) {
+      console.error('Video upload threw:', e);
+    }
+    const after = getPhotoCount(sku);
+    if (after > before) {
+      toast(`Video saved to SKU ${sku}`);
+    } else {
+      console.error('Video upload finished but no row was inserted — bucket likely rejected the file');
+      toast('Video upload failed — see console');
+    }
+  })();
 }
 
 // Esc closes the in-app camera; Space/Enter triggers the shutter.
