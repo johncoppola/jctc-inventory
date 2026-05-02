@@ -234,7 +234,7 @@
       <button class="btn btn-sm" onclick="closePhotoSheet()">Close</button>
     </div>
     <div class="photo-sheet-actions">
-      <label class="btn btn-primary photo-add-btn" for="photoFileInput">+ Add Media</label>
+      <label class="btn btn-primary photo-add-btn" for="photoFileInput">📁 Camera Roll</label>
       <input type="file" id="photoFileInput" accept="image/*,video/*" multiple class="photo-file-input" onchange="_onPhotoFileInput(this)">
       <button class="btn photo-capture-btn" onclick="openInAppCamera()">📷 Camera</button>
       <div class="photo-clone-row">
@@ -242,7 +242,7 @@
         <button class="btn" onclick="_onCloneFromSku()">Clone from SKU</button>
       </div>
     </div>
-    <div class="photo-sheet-hint">Tap Camera to open the in-app shutter — take as many photos as you want, no Use/Retake prompt between shots. Library picker supports multi-select (use “Select” in iOS Photos).</div>
+    <div class="photo-sheet-hint">📷 Camera — rapid in-app shutter for photo bursts (no Use/Retake between shots). 📁 Camera Roll — pick photos & videos from your iPhone at full quality (use “Select” in iOS Photos for multi-select). Record videos in the iPhone Camera app first, then import here.</div>
     <div class="photo-sheet-grid" id="photoSheetGrid"></div>
   </div>
 </div>
@@ -260,8 +260,6 @@
   </div>
   <div class="incam-bottombar">
     <button class="incam-shutter" id="incamShutter" onclick="captureInAppPhoto()" aria-label="Shutter"></button>
-    <button class="incam-record" id="incamRecBtn" onclick="toggleIncamRecording()" aria-label="Record video"><span class="incam-record-dot"></span></button>
-    <input type="file" id="incamVideoFileInput" accept="video/*" capture="environment" class="photo-file-input" onchange="_onIncamVideoFileInput(this)">
   </div>
 </div>
 

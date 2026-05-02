@@ -222,7 +222,7 @@ function _renderPhotoSheet() {
   }
   const grid = document.getElementById('photoSheetGrid');
   if (!photos.length) {
-    grid.innerHTML = '<div class="photo-empty">No media yet. Tap “Add Media” or “Camera” to capture or upload.</div>';
+    grid.innerHTML = '<div class="photo-empty">No media yet. Tap “Camera” for rapid photo bursts, or “Camera Roll” to import from your iPhone.</div>';
   } else {
     grid.innerHTML = photos.map((p, idx) => {
       const vid = isVideoPath(p.storage_path);
@@ -244,7 +244,7 @@ function _renderPhotoSheet() {
   }
 }
 
-// Triggered by the hidden "+ Add Media" file input (library picker, multi-select OK).
+// Triggered by the hidden "Camera Roll" file input (library picker, multi-select OK).
 async function _onPhotoFileInput(input) {
   if (_photoSheetSku == null) return;
   const sku = _photoSheetSku;
@@ -255,20 +255,18 @@ async function _onPhotoFileInput(input) {
   await uploadPhotosForSku(sku, files);
 }
 
-// ===== IN-APP CAMERA (burst mode) =====
-// Photos: getUserMedia live preview + canvas capture, so each shutter tap stores
-// a photo immediately without the iOS "Use Photo / Retake" prompt.
-// Videos: the record button hands off to the native iOS Camera via a hidden
-// <input type=file capture=environment>. iOS provides full image stabilization
-// (OIS / cinematic) which getUserMedia does NOT expose to the browser. After
-// the user taps "Use Video", we upload the file and restart the in-app preview
-// stream so the burst session continues.
+// ===== IN-APP CAMERA (burst mode, photos only) =====
+// getUserMedia live preview + canvas capture, so each shutter tap stores a
+// photo immediately without the iOS "Use Photo / Retake" prompt. Video capture
+// lives in the Camera Roll picker instead — iOS Safari aggressively transcodes
+// any video that comes through <input capture>, dropping it to ~568p with a
+// brutal bitrate. The only path that preserves full 4K + OIS / cinematic
+// stabilization is to record in the iPhone Camera app and import from Photos.
 let _incamStream = null;
 let _incamFacing = 'environment';
 let _incamCount = 0;
 let _incamSku = null;
 let _incamBusy = false;
-let _awaitingNativeVideo = false;
 
 async function openInAppCamera() {
   if (_photoSheetSku == null) return;
@@ -343,87 +341,12 @@ async function captureInAppPhoto() {
 }
 
 function closeInAppCamera() {
-  _awaitingNativeVideo = false;
   if (_incamStream) { _incamStream.getTracks().forEach(t => t.stop()); _incamStream = null; }
   const video = document.getElementById('incamVideo');
   if (video) video.srcObject = null;
   document.getElementById('incamOverlay').classList.remove('show');
   _incamSku = null;
 }
-
-// ===== VIDEO RECORDING (native iOS camera) =====
-// The record button releases the in-app preview stream and clicks a hidden
-// <input type=file accept=video/* capture=environment>. iOS takes over with
-// the system Camera app — full OIS, cinematic stabilization, Apple's encoder.
-// On "Use Video", onchange fires with the .mov; we upload it and restart the
-// in-app preview so the user can keep shooting photos or record again. On
-// "Cancel", onchange never fires — visibilitychange catches the return and
-// restarts the stream anyway.
-
-function toggleIncamRecording() {
-  if (_incamSku == null) return;
-  if (_awaitingNativeVideo) return;
-  const input = document.getElementById('incamVideoFileInput');
-  if (!input) { toast('Video input not found'); return; }
-  _awaitingNativeVideo = true;
-  // Release the camera hardware so iOS's native Camera app can claim it cleanly.
-  if (_incamStream) {
-    _incamStream.getTracks().forEach(t => t.stop());
-    _incamStream = null;
-    const video = document.getElementById('incamVideo');
-    if (video) video.srcObject = null;
-  }
-  input.value = '';
-  input.click();
-}
-
-async function _onIncamVideoFileInput(input) {
-  const files = Array.from(input.files || []);
-  input.value = '';
-  const sku = _incamSku;
-  if (files.length && sku != null) {
-    const file = files[0];
-    // Optimistic counter bump — same UX as photo burst.
-    _incamCount++;
-    const counterEl = document.getElementById('incamCounter');
-    if (counterEl) counterEl.textContent = `${_incamCount} captured`;
-    const sizeMb = (file.size / 1048576).toFixed(1);
-    console.log(`Uploading video: ${file.name} type=${file.type} size=${sizeMb} MB sku=${sku}`);
-    toast(`Uploading video (${sizeMb} MB)…`);
-    (async () => {
-      const before = getPhotoCount(sku);
-      try { await uploadPhotosForSku(sku, [file]); }
-      catch (e) { console.error('Video upload threw:', e); }
-      const after = getPhotoCount(sku);
-      if (after > before) toast(`Video saved to SKU ${sku}`);
-      else { console.error('Video upload finished but no row was inserted — bucket likely rejected the file'); toast('Video upload failed — see console'); }
-    })();
-  }
-  await _resumeFromNativeVideo();
-}
-
-async function _resumeFromNativeVideo() {
-  _awaitingNativeVideo = false;
-  const overlay = document.getElementById('incamOverlay');
-  if (_incamSku != null && overlay && overlay.classList.contains('show')) {
-    await _startIncamStream();
-  }
-}
-
-// Cancel path: native camera dismissed without picking a file → onchange never
-// fires. When the page regains visibility, restart the stream if we were
-// waiting on a video and onchange didn't already handle it.
-document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState !== 'visible') return;
-  if (!_awaitingNativeVideo) return;
-  // Give onchange a moment to fire first (success path).
-  setTimeout(() => {
-    if (!_awaitingNativeVideo) return;
-    const input = document.getElementById('incamVideoFileInput');
-    if (input && input.files && input.files.length) return; // success path will handle it
-    _resumeFromNativeVideo();
-  }, 400);
-});
 
 // Esc closes the in-app camera; Space/Enter triggers the shutter.
 document.addEventListener('keydown', (e) => {

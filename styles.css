@@ -270,11 +270,6 @@ td.photo-cell.has-photos .photo-btn { color: var(--accent); border-color: rgba(7
 .incam-shutter { width: 72px; height: 72px; border-radius: 36px; background: #fff; border: 6px solid rgba(255,255,255,.35); cursor: pointer; padding: 0; box-shadow: 0 0 0 2px rgba(255,255,255,.15); }
 .incam-shutter:active { transform: scale(.94); background: #eee; }
 .incam-shutter:disabled { opacity: .35; cursor: not-allowed; }
-.incam-record { position: absolute; right: 24px; top: 50%; transform: translateY(-50%); width: 56px; height: 56px; border-radius: 28px; background: rgba(255,255,255,.12); border: 2px solid rgba(255,255,255,.4); cursor: pointer; padding: 0; display: flex; align-items: center; justify-content: center; }
-.incam-record:active { background: rgba(255,255,255,.25); }
-.incam-record-dot { width: 22px; height: 22px; border-radius: 11px; background: #ff3b30; transition: all .15s ease; }
-.incam-record.recording .incam-record-dot { width: 18px; height: 18px; border-radius: 4px; }
-.incam-counter.recording { color: #ff3b30; font-weight: 600; }
 
 /* Toast notification */
 .toast { position: fixed; bottom: 20px; right: 20px; background: var(--surface2); border: 1px solid var(--green); color: var(--green); padding: 12px 20px; border-radius: 8px; font-size: 13px; z-index: 200; transform: translateY(100px); opacity: 0; transition: all .3s; }
