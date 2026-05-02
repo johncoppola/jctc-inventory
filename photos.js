@@ -437,7 +437,10 @@ async function _startIncamRecording() {
   _incamRecChunks = [];
   _incamRecorder.ondataavailable = (e) => { if (e.data && e.data.size) _incamRecChunks.push(e.data); };
   _incamRecorder.onstop = _onIncamRecorderStop;
-  _incamRecorder.start();
+  // Timeslice so chunks accumulate during recording. Without this, iOS Safari
+  // emits all data in a single dataavailable that fires after stop() — and if
+  // the source tracks are stopped before that fires, the blob is lost.
+  _incamRecorder.start(500);
   _incamRecording = true;
   _incamRecStartedAt = Date.now();
   // UI
@@ -469,7 +472,6 @@ async function _stopIncamRecording() {
   _incamRecording = false;
   if (_incamRecAutoStop) { clearTimeout(_incamRecAutoStop); _incamRecAutoStop = null; }
   if (_incamRecTimer) { clearInterval(_incamRecTimer); _incamRecTimer = null; }
-  try { _incamRecorder.stop(); } catch (_) {}
   // UI reset (the upload kicks off from onstop).
   const recBtn = document.getElementById('incamRecBtn');
   const counter = document.getElementById('incamCounter');
@@ -479,6 +481,26 @@ async function _stopIncamRecording() {
   if (counter) { counter.classList.remove('recording'); counter.textContent = `${_incamCount} captured`; }
   if (shutter) shutter.disabled = false;
   if (switchBtn) switchBtn.disabled = false;
+  // Wait for the recorder's onstop to fire before tearing down the stream.
+  // _onIncamRecorderStop runs synchronously inside this handler and kicks off
+  // the upload, so by the time we resolve we know the blob is in flight.
+  const recorder = _incamRecorder;
+  await new Promise((resolve) => {
+    if (!recorder) { resolve(); return; }
+    const original = recorder.onstop;
+    let done = false;
+    const finish = (e) => {
+      if (done) return;
+      done = true;
+      try { if (original) original(e); } finally { resolve(); }
+    };
+    recorder.onstop = finish;
+    recorder.onerror = finish;
+    try { recorder.stop(); } catch (_) { finish(); }
+    // Belt-and-suspenders: if the browser never fires onstop, give up after 2s
+    // and proceed to restart the stream so the user isn't stuck.
+    setTimeout(finish, 2000);
+  });
   // Drop the audio track and restart photo-mode stream so the next shutter tap
   // captures full-res stills again.
   await _startIncamStream();
