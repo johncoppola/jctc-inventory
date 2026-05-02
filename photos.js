@@ -274,7 +274,6 @@ let _incamRecStartedAt = 0;
 let _incamRecTimer = null;
 let _incamRecAutoStop = null;
 let _incamRecMime = '';
-let _incamRecAudioStream = null; // separate audio-only stream so we don't disturb the video preview
 const INCAM_REC_MAX_MS = 60000;
 const INCAM_REC_BITRATE = 8000000;
 
@@ -294,13 +293,17 @@ async function openInAppCamera() {
 async function _startIncamStream() {
   try {
     if (_incamStream) { _incamStream.getTracks().forEach(t => t.stop()); _incamStream = null; }
+    // Request audio up-front so MediaRecorder can use the same stream when
+    // recording — iOS Safari will not reliably encode a stream composed from
+    // two different getUserMedia calls. The <video> element stays muted so
+    // the user doesn't hear themselves during preview.
     _incamStream = await navigator.mediaDevices.getUserMedia({
       video: {
         facingMode: { ideal: _incamFacing },
         width:  { ideal: 4096 },
         height: { ideal: 2160 }
       },
-      audio: false
+      audio: true
     });
     const video = document.getElementById('incamVideo');
     video.srcObject = _incamStream;
@@ -361,7 +364,6 @@ function closeInAppCamera() {
     }
     _incamRecorder = null;
     _incamRecChunks = [];
-    if (_incamRecAudioStream) { _incamRecAudioStream.getTracks().forEach(t => t.stop()); _incamRecAudioStream = null; }
     const recBtn = document.getElementById('incamRecBtn');
     const counter = document.getElementById('incamCounter');
     const shutter = document.getElementById('incamShutter');
@@ -404,33 +406,17 @@ async function _startIncamRecording() {
   if (_incamSku == null) return;
   if (typeof MediaRecorder === 'undefined') { toast('Video recording not supported on this browser'); return; }
   if (!_incamStream) { toast('Camera not ready'); return; }
-  // Don't touch the video preview — iOS Safari can leave a black frame when
-  // srcObject is swapped mid-session. Instead, grab a separate audio-only
-  // stream and compose it with the existing video track for the recorder.
-  try {
-    _incamRecAudioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-  } catch (e) {
-    console.error('mic getUserMedia failed:', e);
-    toast('Recording without audio (mic denied)');
-    _incamRecAudioStream = null;
-  }
-  const videoTrack = _incamStream.getVideoTracks()[0];
-  if (!videoTrack) { toast('Camera track unavailable'); return; }
-  const recordStream = new MediaStream();
-  recordStream.addTrack(videoTrack);
-  if (_incamRecAudioStream) {
-    const audioTrack = _incamRecAudioStream.getAudioTracks()[0];
-    if (audioTrack) recordStream.addTrack(audioTrack);
-  }
+  // Use the existing preview stream directly — it already has the audio track
+  // (requested up-front in _startIncamStream). No track composition, no
+  // srcObject swap, no second getUserMedia call.
   _incamRecMime = _pickVideoMime() || '';
   try {
     const opts = { videoBitsPerSecond: INCAM_REC_BITRATE };
     if (_incamRecMime) opts.mimeType = _incamRecMime;
-    _incamRecorder = new MediaRecorder(recordStream, opts);
+    _incamRecorder = new MediaRecorder(_incamStream, opts);
   } catch (e) {
     console.error('MediaRecorder init failed:', e);
     toast('Recorder failed to start');
-    if (_incamRecAudioStream) { _incamRecAudioStream.getTracks().forEach(t => t.stop()); _incamRecAudioStream = null; }
     return;
   }
   _incamRecChunks = [];
@@ -500,11 +486,7 @@ async function _stopIncamRecording() {
     // and proceed to restart the stream so the user isn't stuck.
     setTimeout(finish, 2000);
   });
-  // Stop only the dedicated audio track; the video preview was never touched.
-  if (_incamRecAudioStream) {
-    _incamRecAudioStream.getTracks().forEach(t => t.stop());
-    _incamRecAudioStream = null;
-  }
+  // Preview stream is shared with the recorder — leave it running for photos.
 }
 
 function _onIncamRecorderStop() {
@@ -512,11 +494,22 @@ function _onIncamRecorderStop() {
   _incamRecChunks = [];
   const mime = _incamRecMime || 'video/mp4';
   _incamRecorder = null;
-  if (!chunks.length || _incamSku == null) return;
+  if (_incamSku == null) return;
+  if (!chunks.length) {
+    console.warn('Recorder stopped with no chunks — recording was not saved');
+    toast('Video did not record — try again');
+    return;
+  }
   const ext = /mp4/i.test(mime) ? 'mp4' : 'webm';
   const blob = new Blob(chunks, { type: mime });
   const file = new File([blob], `incam-${Date.now()}.${ext}`, { type: mime });
-  toast('Uploading video…');
+  // Bump the in-camera counter so the user sees immediate feedback before
+  // the upload finishes — it's the same counter photos use, treating videos
+  // as another captured item in the burst session.
+  _incamCount++;
+  const counterEl = document.getElementById('incamCounter');
+  if (counterEl && !_incamRecording) counterEl.textContent = `${_incamCount} captured`;
+  toast(`Uploading video (${(blob.size / 1048576).toFixed(1)} MB)…`);
   uploadPhotosForSku(_incamSku, [file]);
 }
 
