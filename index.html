@@ -250,9 +250,9 @@
 <!-- In-app Camera Overlay (burst mode — no "Use/Retake" between shots) -->
 <div class="incam-overlay" id="incamOverlay">
   <div class="incam-topbar">
-    <button class="incam-btn" onclick="closeInAppCamera()" aria-label="Close">✕</button>
+    <button class="incam-btn" id="incamCloseBtn" onclick="closeInAppCamera()" aria-label="Close">✕</button>
     <span class="incam-counter" id="incamCounter">0 captured</span>
-    <button class="incam-btn" onclick="switchInAppCamera()" aria-label="Switch camera">⟲</button>
+    <button class="incam-btn" id="incamSwitchBtn" onclick="switchInAppCamera()" aria-label="Switch camera">⟲</button>
   </div>
   <div class="incam-stage">
     <video id="incamVideo" playsinline autoplay muted></video>
@@ -260,6 +260,7 @@
   </div>
   <div class="incam-bottombar">
     <button class="incam-shutter" id="incamShutter" onclick="captureInAppPhoto()" aria-label="Shutter"></button>
+    <button class="incam-record" id="incamRecBtn" onclick="toggleIncamRecording()" aria-label="Record video"><span class="incam-record-dot"></span></button>
   </div>
 </div>
 

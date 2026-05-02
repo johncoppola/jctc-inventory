@@ -258,11 +258,24 @@ async function _onPhotoFileInput(input) {
 // ===== IN-APP CAMERA (burst mode) =====
 // Uses getUserMedia for a live preview + canvas capture, so each shutter tap
 // stores a photo immediately without the iOS "Use Photo / Retake" prompt.
+// Video recording uses MediaRecorder on the same stream (re-acquired with audio)
+// to bypass iOS Safari's aggressive transcoding of <input type=file> video capture.
 let _incamStream = null;
 let _incamFacing = 'environment';
 let _incamCount = 0;
 let _incamSku = null;
 let _incamBusy = false;
+
+// Recording state
+let _incamRecorder = null;
+let _incamRecChunks = [];
+let _incamRecording = false;
+let _incamRecStartedAt = 0;
+let _incamRecTimer = null;
+let _incamRecAutoStop = null;
+let _incamRecMime = '';
+const INCAM_REC_MAX_MS = 60000;
+const INCAM_REC_BITRATE = 8000000;
 
 async function openInAppCamera() {
   if (_photoSheetSku == null) return;
@@ -337,11 +350,151 @@ async function captureInAppPhoto() {
 }
 
 function closeInAppCamera() {
+  // If a recording is in flight, abort it so the partial blob doesn't upload.
+  if (_incamRecording) {
+    _incamRecording = false;
+    if (_incamRecAutoStop) { clearTimeout(_incamRecAutoStop); _incamRecAutoStop = null; }
+    if (_incamRecTimer) { clearInterval(_incamRecTimer); _incamRecTimer = null; }
+    if (_incamRecorder) {
+      try { _incamRecorder.ondataavailable = null; _incamRecorder.onstop = null; _incamRecorder.stop(); } catch (_) {}
+    }
+    _incamRecorder = null;
+    _incamRecChunks = [];
+    const recBtn = document.getElementById('incamRecBtn');
+    const counter = document.getElementById('incamCounter');
+    const shutter = document.getElementById('incamShutter');
+    if (recBtn) recBtn.classList.remove('recording');
+    if (counter) counter.classList.remove('recording');
+    if (shutter) shutter.disabled = false;
+  }
   if (_incamStream) { _incamStream.getTracks().forEach(t => t.stop()); _incamStream = null; }
   const video = document.getElementById('incamVideo');
   if (video) video.srcObject = null;
   document.getElementById('incamOverlay').classList.remove('show');
   _incamSku = null;
+}
+
+// ===== VIDEO RECORDING =====
+// Pick the best mimetype the browser supports. mp4/h264 is preferred so iOS can
+// play the file natively; webm/vp9 is the fallback for Chrome/Firefox/Android.
+function _pickVideoMime() {
+  if (typeof MediaRecorder === 'undefined') return null;
+  const candidates = [
+    'video/mp4;codecs=avc1,mp4a',
+    'video/mp4;codecs=avc1',
+    'video/mp4',
+    'video/webm;codecs=vp9,opus',
+    'video/webm;codecs=vp8,opus',
+    'video/webm'
+  ];
+  for (const t of candidates) {
+    try { if (MediaRecorder.isTypeSupported(t)) return t; } catch (_) {}
+  }
+  return '';
+}
+
+async function toggleIncamRecording() {
+  if (_incamRecording) await _stopIncamRecording();
+  else await _startIncamRecording();
+}
+
+async function _startIncamRecording() {
+  if (_incamSku == null) return;
+  if (typeof MediaRecorder === 'undefined') { toast('Video recording not supported on this browser'); return; }
+  // Re-acquire the stream with audio enabled. The photo-mode stream is audio:false
+  // to skip the mic prompt; recording needs audio so we restart it here.
+  try {
+    if (_incamStream) { _incamStream.getTracks().forEach(t => t.stop()); _incamStream = null; }
+    _incamStream = await navigator.mediaDevices.getUserMedia({
+      video: {
+        facingMode: { ideal: _incamFacing },
+        width:  { ideal: 1920 },
+        height: { ideal: 1080 }
+      },
+      audio: true
+    });
+    const video = document.getElementById('incamVideo');
+    video.srcObject = _incamStream;
+    try { await video.play(); } catch (_) {}
+  } catch (e) {
+    console.error('record-mode getUserMedia failed:', e);
+    toast('Camera/mic access denied');
+    // Try to restore photo-mode stream so the user isn't stuck on a black preview.
+    await _startIncamStream();
+    return;
+  }
+  _incamRecMime = _pickVideoMime() || '';
+  try {
+    const opts = { videoBitsPerSecond: INCAM_REC_BITRATE };
+    if (_incamRecMime) opts.mimeType = _incamRecMime;
+    _incamRecorder = new MediaRecorder(_incamStream, opts);
+  } catch (e) {
+    console.error('MediaRecorder init failed:', e);
+    toast('Recorder failed to start');
+    await _startIncamStream();
+    return;
+  }
+  _incamRecChunks = [];
+  _incamRecorder.ondataavailable = (e) => { if (e.data && e.data.size) _incamRecChunks.push(e.data); };
+  _incamRecorder.onstop = _onIncamRecorderStop;
+  _incamRecorder.start();
+  _incamRecording = true;
+  _incamRecStartedAt = Date.now();
+  // UI
+  const recBtn = document.getElementById('incamRecBtn');
+  const counter = document.getElementById('incamCounter');
+  const shutter = document.getElementById('incamShutter');
+  const switchBtn = document.getElementById('incamSwitchBtn');
+  if (recBtn) recBtn.classList.add('recording');
+  if (counter) counter.classList.add('recording');
+  if (shutter) shutter.disabled = true;
+  if (switchBtn) switchBtn.disabled = true;
+  _updateIncamRecTimer();
+  _incamRecTimer = setInterval(_updateIncamRecTimer, 250);
+  // Hard cap so a forgotten recording doesn't chew through storage.
+  _incamRecAutoStop = setTimeout(() => { if (_incamRecording) _stopIncamRecording(); }, INCAM_REC_MAX_MS);
+}
+
+function _updateIncamRecTimer() {
+  const counter = document.getElementById('incamCounter');
+  if (!counter || !_incamRecording) return;
+  const s = Math.floor((Date.now() - _incamRecStartedAt) / 1000);
+  const mm = String(Math.floor(s / 60));
+  const ss = String(s % 60).padStart(2, '0');
+  counter.textContent = `● REC ${mm}:${ss}`;
+}
+
+async function _stopIncamRecording() {
+  if (!_incamRecording || !_incamRecorder) return;
+  _incamRecording = false;
+  if (_incamRecAutoStop) { clearTimeout(_incamRecAutoStop); _incamRecAutoStop = null; }
+  if (_incamRecTimer) { clearInterval(_incamRecTimer); _incamRecTimer = null; }
+  try { _incamRecorder.stop(); } catch (_) {}
+  // UI reset (the upload kicks off from onstop).
+  const recBtn = document.getElementById('incamRecBtn');
+  const counter = document.getElementById('incamCounter');
+  const shutter = document.getElementById('incamShutter');
+  const switchBtn = document.getElementById('incamSwitchBtn');
+  if (recBtn) recBtn.classList.remove('recording');
+  if (counter) { counter.classList.remove('recording'); counter.textContent = `${_incamCount} captured`; }
+  if (shutter) shutter.disabled = false;
+  if (switchBtn) switchBtn.disabled = false;
+  // Drop the audio track and restart photo-mode stream so the next shutter tap
+  // captures full-res stills again.
+  await _startIncamStream();
+}
+
+function _onIncamRecorderStop() {
+  const chunks = _incamRecChunks;
+  _incamRecChunks = [];
+  const mime = _incamRecMime || 'video/mp4';
+  _incamRecorder = null;
+  if (!chunks.length || _incamSku == null) return;
+  const ext = /mp4/i.test(mime) ? 'mp4' : 'webm';
+  const blob = new Blob(chunks, { type: mime });
+  const file = new File([blob], `incam-${Date.now()}.${ext}`, { type: mime });
+  toast('Uploading video…');
+  uploadPhotosForSku(_incamSku, [file]);
 }
 
 // Esc closes the in-app camera; Space/Enter triggers the shutter.
