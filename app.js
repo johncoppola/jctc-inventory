@@ -16,7 +16,10 @@ const ITEM_DB_TO_JS = {
   listings: 'listings',
   sale_price: 'salePrice', sold_platform: 'soldPlatform', date_sold: 'dateSold', payment_method: 'paymentMethod',
   platform_fees: 'platformFees', shipping_cost: 'shippingCost',
-  other_costs: 'otherCosts', notes: 'notes'
+  other_costs: 'otherCosts', notes: 'notes',
+  // Chunk #7 auto-trigger state (snooze is user-writable; the rest are read-only and set by the cron)
+  snooze: 'snooze', pricing_brief_at: 'pricingBriefAt', auto_drafted_at: 'autoDraftedAt',
+  auto_trigger_attempted_at: 'autoTriggerAttemptedAt', auto_trigger_error: 'autoTriggerError'
 };
 const ITEM_JS_TO_DB = Object.fromEntries(Object.entries(ITEM_DB_TO_JS).map(([k,v]) => [v,k]));
 
@@ -759,6 +762,66 @@ function updateField(sku, field, value) {
   }, 300);
 }
 
+// ===== AUTO-TRIGGER (chunk #7) =====
+// Snooze toggle: clicking flips items.snooze. The auto-trigger cron skips snoozed SKUs.
+// Status badge: read-only indicator of where the SKU is in the auto-trigger pipeline.
+function snoozeToggleHtml(item) {
+  const on = !!item.snooze;
+  const cls = on ? 'snooze-toggle is-snoozed' : 'snooze-toggle';
+  const title = on ? 'Snoozed — auto-trigger will skip this SKU. Click to un-snooze.'
+                   : 'Snooze this SKU (auto-trigger will skip it).';
+  return `<button class="${cls}" onclick="toggleSnooze(${item.sku})" title="${title}">${on ? '\u{1F4A4}' : '⏸'}</button>`;
+}
+
+function autoTriggerBadge(item) {
+  if (item.autoTriggerError) {
+    const msg = String(item.autoTriggerError).replace(/"/g, '&quot;');
+    return `<button class="auto-badge auto-badge-error" onclick="clearAutoTriggerError(${item.sku})" title="Auto-trigger error: ${msg}\nClick to clear and let the next scan retry.">⚠</button>`;
+  }
+  if (item.autoDraftedAt) {
+    const when = new Date(item.autoDraftedAt).toLocaleDateString();
+    return `<span class="auto-badge auto-badge-drafted" title="Auto-drafted ${when} — eBay/FBM drafts created by the cron.">\u{1F4DD}</span>`;
+  }
+  if (item.pricingBriefAt) {
+    const when = new Date(item.pricingBriefAt).toLocaleDateString();
+    return `<span class="auto-badge auto-badge-priced" title="Priced ${when} via auto-trigger; drafts pending.">\u{1F4B0}</span>`;
+  }
+  return '';
+}
+
+async function toggleSnooze(sku) {
+  const item = DATA.items.find(i => i.sku === sku);
+  if (!item) return;
+  const next = !item.snooze;
+  item.snooze = next;
+  try {
+    await supabase.update('items', `sku=eq.${sku}`, { snooze: next });
+    toast(next ? `SKU ${sku} snoozed` : `SKU ${sku} un-snoozed`);
+  } catch (err) {
+    item.snooze = !next;
+    console.error('toggleSnooze error:', err);
+    toast('Error saving snooze — check console');
+  }
+  reRenderCurrentView();
+}
+
+async function clearAutoTriggerError(sku) {
+  const item = DATA.items.find(i => i.sku === sku);
+  if (!item) return;
+  if (!confirm(`Clear auto-trigger error for SKU ${sku}? The next scheduled scan will retry it.`)) return;
+  const prev = item.autoTriggerError;
+  item.autoTriggerError = null;
+  try {
+    await supabase.update('items', `sku=eq.${sku}`, { auto_trigger_error: null });
+    toast(`SKU ${sku} cleared for retry`);
+  } catch (err) {
+    item.autoTriggerError = prev;
+    console.error('clearAutoTriggerError error:', err);
+    toast('Error clearing — check console');
+  }
+  reRenderCurrentView();
+}
+
 // ===== RENDER FUNCTIONS =====
 function makeSelect(sku, field, options, current) {
   return `<select onchange="updateField(${sku},'${field}',this.value)">${options.map(o => {
@@ -780,7 +843,7 @@ function itemRow(item, showAllCols=true) {
   const statusOpts = DROPDOWN_OPTIONS.listingStatus;
   const ageCls = getAgingClass(item);
   let html = `<tr data-sku="${item.sku}" class="${ageCls}">`;
-  html += `<td>${item.sku}</td>`;
+  html += `<td class="sku-cell">${item.sku}${autoTriggerBadge(item)}${snoozeToggleHtml(item)}</td>`;
   html += photoCellHtml(item);
   html += `<td>Lot ${item.lotId}</td>`;
   html += `<td>${makeInput(item.sku,'bstockItemCode',item.bstockItemCode || '')}</td>`;

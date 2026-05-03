@@ -191,3 +191,19 @@ CREATE TRIGGER item_photos_one_hero_trigger
 --         'video/mp4','video/quicktime','video/webm','video/x-m4v','video/3gpp'
 --       ]
 --   WHERE id = 'item-photos';
+-- Migration 10: chunk #7 auto-trigger pricing & drafting.
+--   ALTER TABLE items
+--     ADD snooze BOOLEAN NOT NULL DEFAULT false,
+--     ADD pricing_brief_at TIMESTAMPTZ,
+--     ADD auto_drafted_at TIMESTAMPTZ,
+--     ADD auto_trigger_attempted_at TIMESTAMPTZ,
+--     ADD auto_trigger_error TEXT;
+--   CREATE INDEX items_auto_trigger_candidates_idx
+--     ON items (sku)
+--     WHERE listing_status='Not Listed' AND snooze=false
+--       AND pricing_brief_at IS NULL AND auto_trigger_error IS NULL;
+--   CREATE FUNCTION find_auto_trigger_candidates() RETURNS TABLE (...)
+--     — returns SKUs ready for auto-triggered pricing + eBay/FBM drafting.
+--     Criteria: Not Listed, not snoozed, all four manual fields set
+--     (cosmetic, functional, tier, listed_condition), photos >= 4,
+--     never priced, no prior unrecovered error, no listings entries.
