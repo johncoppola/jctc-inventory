@@ -1635,18 +1635,18 @@ async function renderRepricing() {
 
 function _renderRepriceTable(rows, isFloor) {
   let h = '<table class="reprice-table"><thead><tr>'
-    + '<th>SKU</th><th>Item</th><th>Channel</th>'
+    + '<th>SKU</th><th>Item</th><th>Channel</th><th>Listing</th>'
     + (isFloor ? '<th>Original → Now</th>' : '<th>Current → Proposed</th>')
-    + '<th>Days at $</th><th>Why</th><th>Actions</th></tr></thead><tbody>';
+    + '<th>Days at $</th><th>Actions</th></tr></thead><tbody>';
   rows.forEach(r => {
     const item = _itemFor(r.item_sku);
     const itemLabel = item
       ? `${item.brand || ''} ${item.model || ''}`.trim() || '(no name)'
       : `SKU ${r.item_sku}`;
     const url = _listingUrlFor(item, r.channel);
-    const chCell = url
-      ? `${r.channel} <a href="${url}" target="_blank" rel="noopener" class="reprice-link" title="Open live listing">↗</a>`
-      : r.channel;
+    const linkCell = url
+      ? `<a href="${url}" target="_blank" rel="noopener" class="reprice-link">Open ↗</a>`
+      : `<button class="btn btn-sm reprice-add-link" onclick="setListingUrl(${r.item_sku}, '${r.channel}')">Add link</button>`;
     const priceCell = isFloor
       ? `$${Math.round(r.original_list_price)} → <strong>$${Math.round(r.current_price)}</strong>`
       : `$${Math.round(r.current_price)} → <strong class="reprice-proposed">$${Math.round(r.proposed_price)}</strong>`
@@ -1662,10 +1662,10 @@ function _renderRepriceTable(rows, isFloor) {
       : `<button class="btn btn-sm btn-primary" onclick="approveReprice(${r.id})">Approved &amp; Live</button>
          ${r.needs_repost ? `<button class="btn btn-sm reprice-repost-btn ${r.reposted_at ? 'is-done' : ''}" onclick="markReposted(${r.id})">${r.reposted_at ? '✓ Reposted' : 'Reposted'}</button>` : ''}
          <button class="btn btn-sm" onclick="dismissReprice(${r.id})">Dismiss</button>`;
-    h += `<tr><td>${r.item_sku}${groupTag}</td><td>${itemLabel}</td><td>${chCell}</td>`
+    h += `<tr><td>${r.item_sku}${groupTag}</td><td>${itemLabel}</td><td>${r.channel}</td>`
+      + `<td class="reprice-listing-cell">${linkCell}</td>`
       + `<td class="money-cell">${priceCell}</td>`
       + `<td>${r.days_at_current_price}d</td>`
-      + `<td class="reprice-notes">${r.notes || ''}</td>`
       + `<td class="reprice-actions">${actions}</td></tr>`;
   });
   h += '</tbody></table>';
@@ -1676,6 +1676,31 @@ function _listingUrlFor(item, channel) {
   if (!item || !item.listings) return '';
   const entry = item.listings.find(l => (l.channel || '') === channel);
   return entry && entry.url ? entry.url : '';
+}
+
+// Inline backfill: prompt for a listing URL and write it into the
+// matching items.listings[].url entry, then re-render the table.
+async function setListingUrl(sku, channel) {
+  const item = _itemFor(sku);
+  if (!item) { toast('SKU not found'); return; }
+  const idx = (item.listings || []).findIndex(l => (l.channel || '') === channel);
+  if (idx < 0) { toast(`No ${channel} listing on SKU ${sku}`); return; }
+  const input = prompt(`Paste the ${channel} listing URL for SKU ${sku}:`, item.listings[idx].url || '');
+  if (input === null) return;
+  const url = input.trim();
+  if (url && !/^https?:\/\//i.test(url)) {
+    toast('URL must start with http:// or https://');
+    return;
+  }
+  item.listings[idx].url = url;
+  try {
+    await supabase.update('items', `sku=eq.${sku}`, { listings: item.listings });
+    toast(url ? 'Link saved' : 'Link cleared');
+    renderRepricing();
+  } catch (e) {
+    console.error('setListingUrl failed:', e);
+    toast('Save failed');
+  }
 }
 
 // Approve a non-floor drop. Writes the new price to price_history, updates
