@@ -17,8 +17,9 @@ const ITEM_DB_TO_JS = {
   sale_price: 'salePrice', sold_platform: 'soldPlatform', date_sold: 'dateSold', payment_method: 'paymentMethod',
   platform_fees: 'platformFees', shipping_cost: 'shippingCost',
   other_costs: 'otherCosts', notes: 'notes',
-  // Chunk #7 auto-trigger state (snooze is user-writable; the rest are read-only and set by the cron)
-  snooze: 'snooze', pricing_brief_at: 'pricingBriefAt', auto_drafted_at: 'autoDraftedAt',
+  // Chunk #7 auto-trigger state (snooze + channel_eligibility are user-writable; the rest are read-only and set by the cron)
+  snooze: 'snooze', channel_eligibility: 'channelEligibility',
+  pricing_brief_at: 'pricingBriefAt', auto_drafted_at: 'autoDraftedAt',
   auto_trigger_attempted_at: 'autoTriggerAttemptedAt', auto_trigger_error: 'autoTriggerError'
 };
 const ITEM_JS_TO_DB = Object.fromEntries(Object.entries(ITEM_DB_TO_JS).map(([k,v]) => [v,k]));
@@ -805,6 +806,38 @@ async function toggleSnooze(sku) {
   reRenderCurrentView();
 }
 
+function channelEligibilityHtml(item) {
+  const v = item.channelEligibility || 'both';
+  const cls = v === 'both' ? 'channel-eligibility' : 'channel-eligibility is-restricted';
+  const title = v === 'both'
+    ? 'Auto-trigger: drafts on both eBay and FBM. Switch to F (FBM only) for bulky/heavy items.'
+    : v === 'fbm_only'
+      ? 'Auto-trigger: FBM only (eBay shipping prohibitive for this item).'
+      : 'Auto-trigger: eBay only.';
+  return `<select class="${cls}" onchange="updateChannelEligibility(${item.sku},this.value)" title="${title}">`
+    + `<option value="both"${v==='both'?' selected':''}>B</option>`
+    + `<option value="fbm_only"${v==='fbm_only'?' selected':''}>F</option>`
+    + `<option value="ebay_only"${v==='ebay_only'?' selected':''}>E</option>`
+    + `</select>`;
+}
+
+async function updateChannelEligibility(sku, value) {
+  const item = DATA.items.find(i => i.sku === sku);
+  if (!item) return;
+  const prev = item.channelEligibility;
+  item.channelEligibility = value;
+  try {
+    await supabase.update('items', `sku=eq.${sku}`, { channel_eligibility: value });
+    const labels = { both: 'eBay + FBM', fbm_only: 'FBM only', ebay_only: 'eBay only' };
+    toast(`SKU ${sku}: auto-trigger ${labels[value]}`);
+  } catch (err) {
+    item.channelEligibility = prev;
+    console.error('updateChannelEligibility error:', err);
+    toast('Error saving — check console');
+  }
+  reRenderCurrentView();
+}
+
 async function clearAutoTriggerError(sku) {
   const item = DATA.items.find(i => i.sku === sku);
   if (!item) return;
@@ -843,7 +876,7 @@ function itemRow(item, showAllCols=true) {
   const statusOpts = DROPDOWN_OPTIONS.listingStatus;
   const ageCls = getAgingClass(item);
   let html = `<tr data-sku="${item.sku}" class="${ageCls}">`;
-  html += `<td class="sku-cell">${item.sku}${autoTriggerBadge(item)}${snoozeToggleHtml(item)}</td>`;
+  html += `<td class="sku-cell">${item.sku}${autoTriggerBadge(item)}${snoozeToggleHtml(item)}${channelEligibilityHtml(item)}</td>`;
   html += photoCellHtml(item);
   html += `<td>Lot ${item.lotId}</td>`;
   html += `<td>${makeInput(item.sku,'bstockItemCode',item.bstockItemCode || '')}</td>`;
@@ -1007,7 +1040,7 @@ const HEADER_FIELD_MAP_SHORT = HEADER_FIELD_MAP_ALL.filter(h =>
 
 // Default column widths (px) by field name
 const COL_DEFAULT_WIDTHS = {
-  sku: 75, photoCount: 80, lotId: 80, bstockItemCode: 100, brand: 155, model: 200, category: 140, unitCost: 120,
+  sku: 130, photoCount: 80, lotId: 80, bstockItemCode: 100, brand: 155, model: 200, category: 140, unitCost: 120,
   powersOn: 120, coreFunction: 140, accessories: 130, missingItems: 155,
   cosmeticGrade: 125, functionalGrade: 140, tier: 95, listedCondition: 140,
   listingStatus: 110, listingChannel: 125, listPrice: 110, dateListed: 135,

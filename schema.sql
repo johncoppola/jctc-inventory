@@ -191,6 +191,12 @@ CREATE TRIGGER item_photos_one_hero_trigger
 --         'video/mp4','video/quicktime','video/webm','video/x-m4v','video/3gpp'
 --       ]
 --   WHERE id = 'item-photos';
+-- Migration 11: channel_eligibility flag for auto-trigger platform discretion.
+--   ALTER TABLE items ADD channel_eligibility TEXT NOT NULL DEFAULT 'both';
+--   CHECK constraint: value IN ('both', 'fbm_only', 'ebay_only').
+--   CREATE INDEX items_channel_eligibility_nondefault_idx (partial, non-default).
+--   DROP + recreate find_auto_trigger_candidates() to return channel_eligibility.
+--   Backfilled 12 SKUs to 'fbm_only' based on bulky-brand list + model keyword regex.
 -- Migration 10: chunk #7 auto-trigger pricing & drafting.
 --   ALTER TABLE items
 --     ADD snooze BOOLEAN NOT NULL DEFAULT false,
