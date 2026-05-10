@@ -1661,6 +1661,11 @@ function _renderRepriceTable(rows, isFloor) {
          <button class="btn btn-sm reprice-override" onclick="floorAction(${r.id},'override')" title="Drop one more 10% step past the floor">Override</button>`
       : `<button class="btn btn-sm btn-primary" onclick="approveReprice(${r.id})">Approved &amp; Live</button>
          ${r.needs_repost ? `<button class="btn btn-sm reprice-repost-btn ${r.reposted_at ? 'is-done' : ''}" onclick="markReposted(${r.id})">${r.reposted_at ? '✓ Reposted' : 'Reposted'}</button>` : ''}
+         <span class="reprice-custom">
+           <span class="reprice-custom-prefix">$</span>
+           <input type="number" min="0" step="1" inputmode="numeric" class="reprice-custom-input" id="repriceCustom-${r.id}" placeholder="other" onkeydown="if(event.key==='Enter')applyCustomReprice(${r.id})">
+           <button class="btn btn-sm" onclick="applyCustomReprice(${r.id})">Apply</button>
+         </span>
          <button class="btn btn-sm" onclick="dismissReprice(${r.id})">Dismiss</button>`;
     h += `<tr><td>${r.item_sku}${groupTag}</td><td>${itemLabel}</td><td>${r.channel}</td>`
       + `<td class="reprice-listing-cell">${linkCell}</td>`
@@ -1704,12 +1709,16 @@ async function setListingUrl(sku, channel) {
 }
 
 // Approve a non-floor drop. Writes the new price to price_history, updates
-// the listings JSONB entry, and marks the queue row approved.
-async function approveReprice(id) {
+// the listings JSONB entry, and marks the queue row approved. If `overridePrice`
+// is passed, that value is used instead of the suggested proposed_price and
+// the price_history source is tagged 'reprice_custom'.
+async function approveReprice(id, overridePrice) {
   const row = _repriceQueue.find(r => r.id === id);
   if (!row) return;
   const item = _itemFor(row.item_sku);
   if (!item) { toast('SKU not found'); return; }
+  const isCustom = overridePrice !== undefined;
+  const newPrice = isCustom ? Number(overridePrice) : Number(row.proposed_price);
   // Group dedupe: if this row has a group_id, apply to every SKU sharing it.
   const targets = row.group_id
     ? DATA.items.filter(i =>
@@ -1719,24 +1728,44 @@ async function approveReprice(id) {
     for (const t of targets) {
       const idx = (t.listings || []).findIndex(l => (l.channel || '') === row.channel);
       if (idx < 0) continue;
-      t.listings[idx].price = Number(row.proposed_price);
+      t.listings[idx].price = newPrice;
       await supabase.update('items', `sku=eq.${t.sku}`, { listings: t.listings });
       await supabase.insert('price_history', [{
         item_sku: t.sku,
         channel: row.channel,
-        price: Number(row.proposed_price),
-        source: 'reprice_approved'
+        price: newPrice,
+        source: isCustom ? 'reprice_custom' : 'reprice_approved'
       }]);
       _snapshotItem(t);
     }
-    await supabase.update('reprice_queue', `id=eq.${id}`,
-      { status: 'approved', decided_at: new Date().toISOString() });
-    toast(`Approved $${Math.round(row.proposed_price)} on ${row.channel}${targets.length>1?` (${targets.length} SKUs)`:''}`);
+    await supabase.update('reprice_queue', `id=eq.${id}`, {
+      status: 'approved',
+      decision: isCustom ? 'custom_price' : null,
+      decided_at: new Date().toISOString()
+    });
+    const verb = isCustom ? 'Applied' : 'Approved';
+    toast(`${verb} $${Math.round(newPrice)} on ${row.channel}${targets.length>1?` (${targets.length} SKUs)`:''}`);
     renderRepricing();
   } catch (e) {
     console.error('approveReprice failed:', e);
     toast('Error approving — check console');
   }
+}
+
+// Apply a manually-entered price from the custom-price input, instead of
+// the queue's suggested proposed_price.
+async function applyCustomReprice(id) {
+  const input = document.getElementById(`repriceCustom-${id}`);
+  if (!input) return;
+  const raw = (input.value || '').trim();
+  if (!raw) { toast('Enter a price first'); input.focus(); return; }
+  const price = Number(raw);
+  if (!isFinite(price) || price <= 0) {
+    toast('Enter a valid price');
+    input.focus();
+    return;
+  }
+  await approveReprice(id, price);
 }
 
 async function dismissReprice(id) {
