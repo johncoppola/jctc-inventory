@@ -1533,9 +1533,15 @@ function renderAll() {
   const search = document.getElementById('searchAll').value;
   const lot = document.getElementById('filterLot').value;
   const status = document.getElementById('filterStatus').value;
+  const cosmetic = document.getElementById('filterCosmetic').value;
+  const functional = document.getElementById('filterFunctional').value;
+  const condition = document.getElementById('filterCondition').value;
   let items = [...DATA.items];
   items = filterItems(items, search, lot);
   if (status) items = items.filter(i => i.listingStatus === status);
+  if (cosmetic) items = items.filter(i => i.cosmeticGrade === cosmetic);
+  if (functional) items = items.filter(i => i.functionalGrade === functional);
+  if (condition) items = items.filter(i => i.listedCondition === condition);
   items = sortItems(items);
   let html = '<table>' + tableHeaders(true);
   items.forEach(i => html += itemRow(i, true));
@@ -1549,8 +1555,16 @@ function renderOpen() {
   DATA.items.forEach(i => calcItem(i));
   const search = document.getElementById('searchOpen').value;
   const lot = document.getElementById('filterOpenLot').value;
+  const status = document.getElementById('filterOpenStatus').value;
+  const cosmetic = document.getElementById('filterOpenCosmetic').value;
+  const functional = document.getElementById('filterOpenFunctional').value;
+  const condition = document.getElementById('filterOpenCondition').value;
   let items = DATA.items.filter(i => i.listingStatus !== 'Sold');
   items = filterItems(items, search, lot);
+  if (status) items = items.filter(i => i.listingStatus === status);
+  if (cosmetic) items = items.filter(i => i.cosmeticGrade === cosmetic);
+  if (functional) items = items.filter(i => i.functionalGrade === functional);
+  if (condition) items = items.filter(i => i.listedCondition === condition);
 
   // Apply stale listing filter
   if (_staleFilter === 'warning') {

@@ -98,6 +98,28 @@
         <option value="Pending">Pending</option>
         <option value="Sold">Sold</option>
       </select>
+      <select id="filterCosmetic" onchange="renderAll()">
+        <option value="">All Cosmetic</option>
+        <option value="A">A</option>
+        <option value="B">B</option>
+        <option value="C">C</option>
+      </select>
+      <select id="filterFunctional" onchange="renderAll()">
+        <option value="">All Functional</option>
+        <option value="A (Sealed)">A (Sealed)</option>
+        <option value="A">A</option>
+        <option value="B">B</option>
+        <option value="C">C</option>
+      </select>
+      <select id="filterCondition" onchange="renderAll()">
+        <option value="">All Conditions</option>
+        <option value="OB/LN">OB/LN</option>
+        <option value="New - Open Box">New - Open Box</option>
+        <option value="Used - Like New">Used - Like New</option>
+        <option value="Used - Good">Used - Good</option>
+        <option value="Used - Fair">Used - Fair</option>
+        <option value="Salvage/Parts">Salvage/Parts</option>
+      </select>
     </div>
     <div class="table-wrap" id="allTable"></div>
   </div>
@@ -107,6 +129,35 @@
     <div class="toolbar">
       <input type="search" id="searchOpen" placeholder="Search open inventory..." oninput="renderOpen()">
       <select id="filterOpenLot" onchange="renderOpen()"><option value="">All Lots</option></select>
+      <select id="filterOpenStatus" onchange="renderOpen()">
+        <option value="">All Statuses</option>
+        <option value="Not Listed">Not Listed</option>
+        <option value="Drafted">Drafted</option>
+        <option value="Listed">Listed</option>
+        <option value="Pending">Pending</option>
+      </select>
+      <select id="filterOpenCosmetic" onchange="renderOpen()">
+        <option value="">All Cosmetic</option>
+        <option value="A">A</option>
+        <option value="B">B</option>
+        <option value="C">C</option>
+      </select>
+      <select id="filterOpenFunctional" onchange="renderOpen()">
+        <option value="">All Functional</option>
+        <option value="A (Sealed)">A (Sealed)</option>
+        <option value="A">A</option>
+        <option value="B">B</option>
+        <option value="C">C</option>
+      </select>
+      <select id="filterOpenCondition" onchange="renderOpen()">
+        <option value="">All Conditions</option>
+        <option value="OB/LN">OB/LN</option>
+        <option value="New - Open Box">New - Open Box</option>
+        <option value="Used - Like New">Used - Like New</option>
+        <option value="Used - Good">Used - Good</option>
+        <option value="Used - Fair">Used - Fair</option>
+        <option value="Salvage/Parts">Salvage/Parts</option>
+      </select>
       <div class="stale-filter-group">
         <button class="stale-btn active" data-stale="all" onclick="setStaleFilter('all')">All</button>
         <button class="stale-btn" data-stale="warning" onclick="setStaleFilter('warning')">15+ Days</button>
