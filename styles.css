@@ -321,6 +321,7 @@ td.photo-cell.has-photos .photo-btn { color: var(--accent); border-color: rgba(7
 .auto-badge-drafted { color: var(--green); background: rgba(34,197,94,.10); }
 .auto-badge-error { color: var(--red); background: rgba(239,68,68,.12); border: 1px solid rgba(239,68,68,.35); cursor: pointer; }
 .auto-badge-error:hover { background: rgba(239,68,68,.22); }
+.group-badge { display: inline-block; font-size: 11px; font-weight: 500; line-height: 1; padding: 2px 5px; margin-left: 4px; border-radius: 4px; color: var(--accent); background: rgba(79,140,255,.10); border: 1px solid rgba(79,140,255,.25); cursor: default; white-space: nowrap; }
 
 /* Channel-eligibility dropdown (B = Both, F = FBM only, E = eBay only) — picks which platforms the auto-trigger drafts on. Hover the dropdown for the full meaning. */
 .channel-eligibility { background: transparent; border: 1px solid var(--border); color: var(--text-dim); font-size: 11px; padding: 1px 2px; margin-left: 4px; border-radius: 4px; cursor: pointer; line-height: 1; width: 32px; }

@@ -433,6 +433,44 @@ function isListed(item)  { return item.listingStatus === LISTED_STATUS; }
 function isSold(item)    { return item.listingStatus === SOLD_STATUS; }
 function isOpen(item)    { return item.listingStatus !== SOLD_STATUS; }
 
+// ===== GROUP MEMBERSHIP (strict-key sister SKUs sharing one listing) =====
+// Returns all items (incl. this one) whose listings share ANY non-empty groupId
+// with `sku`'s listings. Sorted ascending by sku.
+function getGroupMembers(sku) {
+  const item = DATA.items.find(i => i.sku === sku);
+  if (!item) return [];
+  const groupIds = new Set((item.listings || []).map(l => l.groupId).filter(Boolean));
+  if (!groupIds.size) return [];
+  return DATA.items
+    .filter(i => (i.listings || []).some(l => l.groupId && groupIds.has(l.groupId)))
+    .sort((a, b) => a.sku - b.sku);
+}
+
+// Small badge for the SKU cell showing group membership + FIFO position.
+function groupBadgeHtml(item) {
+  const members = getGroupMembers(item.sku);
+  if (members.length <= 1) return '';
+  const listed = members.filter(isListed).sort((a, b) => a.sku - b.sku);
+  const allSkus = members.map(i => i.sku).join(', ');
+  let label, title;
+  const fifoOrder = listed.map(i => 'SKU ' + i.sku).join(' → ');
+  if (isListed(item)) {
+    const pos = listed.findIndex(i => i.sku === item.sku) + 1;
+    label = `grp ${pos}/${listed.length}`;
+    title = `Group of ${members.length} sister SKUs sharing one listing.\n` +
+            `Members: ${allSkus}\n` +
+            `Listed: ${listed.length} (FIFO order: ${fifoOrder})\n` +
+            `This SKU is #${pos} in FIFO.`;
+  } else {
+    label = `grp ${listed.length}`;
+    title = `Group of ${members.length} sister SKUs sharing one listing.\n` +
+            `Members: ${allSkus}\n` +
+            `Listed: ${listed.length} (FIFO order: ${fifoOrder})\n` +
+            `This SKU is ${item.listingStatus || 'Not Listed'}.`;
+  }
+  return `<span class="group-badge" title="${title.replace(/"/g, '&quot;')}">${label}</span>`;
+}
+
 // Returns 'danger' (30+), 'warning' (15-29), or '' based on listing age.
 function getAgingClass(item) {
   if (!isListed(item)) return '';
@@ -713,6 +751,41 @@ const _updateTimers = {};
 function updateField(sku, field, value) {
   const item = DATA.items.find(i => i.sku === sku);
   if (!item) return;
+
+  // FIFO sale attribution: if marking a grouped SKU sold and a lower-numbered
+  // Listed sister exists, offer to redirect the sale to that SKU instead.
+  if (field === 'listingStatus' && value === SOLD_STATUS) {
+    const members = getGroupMembers(sku);
+    const listed = members.filter(isListed).sort((a, b) => a.sku - b.sku);
+    if (listed.length > 1 && listed[0].sku !== sku) {
+      const fifoTarget = listed[0];
+      const order = listed.map(i => 'SKU ' + i.sku).join(' → ');
+      const goSwap = confirm(
+        `SKU ${sku} is part of a group sharing one listing.\n\n` +
+        `FIFO order: ${order}\n` +
+        `SKU ${fifoTarget.sku} sells first.\n\n` +
+        `OK = mark SKU ${fifoTarget.sku} sold instead (FIFO).\n` +
+        `Cancel = mark SKU ${sku} sold anyway.`
+      );
+      if (goSwap) {
+        // Revert this row's dropdown to its previous value
+        const row = document.querySelector(`tr[data-sku="${sku}"]`);
+        if (row) {
+          const sel = row.querySelector('select[onchange*="listingStatus"]');
+          if (sel) sel.value = item.listingStatus;
+        }
+        // Reflect the new selection on the target row's dropdown
+        const targetRow = document.querySelector(`tr[data-sku="${fifoTarget.sku}"]`);
+        if (targetRow) {
+          const sel = targetRow.querySelector('select[onchange*="listingStatus"]');
+          if (sel) sel.value = SOLD_STATUS;
+        }
+        updateField(fifoTarget.sku, 'listingStatus', SOLD_STATUS);
+        return;
+      }
+    }
+  }
+
   if (['salePrice','platformFees','shippingCost','otherCosts','msrp'].includes(field)) {
     item[field] = Number(value) || 0;
     if (field === 'msrp') item[field] = Math.round(item[field]);
@@ -876,7 +949,7 @@ function itemRow(item, showAllCols=true) {
   const statusOpts = DROPDOWN_OPTIONS.listingStatus;
   const ageCls = getAgingClass(item);
   let html = `<tr data-sku="${item.sku}" class="${ageCls}">`;
-  html += `<td class="sku-cell">${item.sku}${autoTriggerBadge(item)}${snoozeToggleHtml(item)}${channelEligibilityHtml(item)}</td>`;
+  html += `<td class="sku-cell">${item.sku}${autoTriggerBadge(item)}${snoozeToggleHtml(item)}${channelEligibilityHtml(item)}${groupBadgeHtml(item)}</td>`;
   html += photoCellHtml(item);
   html += `<td>Lot ${item.lotId}</td>`;
   html += `<td>${makeInput(item.sku,'bstockItemCode',item.bstockItemCode || '')}</td>`;
