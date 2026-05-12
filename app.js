@@ -468,7 +468,7 @@ function groupBadgeHtml(item) {
             `Listed: ${listed.length} (FIFO order: ${fifoOrder})\n` +
             `This SKU is ${item.listingStatus || 'Not Listed'}.`;
   }
-  return `<span class="group-badge" title="${title.replace(/"/g, '&quot;')}">${label}</span>`;
+  return `<br><span class="group-badge" title="${title.replace(/"/g, '&quot;')}">${label}</span>`;
 }
 
 // Returns 'danger' (30+), 'warning' (15-29), or '' based on listing age.
