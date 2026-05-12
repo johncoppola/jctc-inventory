@@ -953,7 +953,7 @@ function itemRow(item, showAllCols=true) {
     html += `<td>${makeSelect(item.sku,'functionalGrade',DROPDOWN_OPTIONS.functionalGrade,item.functionalGrade)}</td>`;
   }
   html += `<td>${makeSelect(item.sku,'listedCondition',conditionOptions(),item.listedCondition)}</td>`;
-  html += `<td class="cell-with-history">${makeSelect(item.sku,'listingStatus',statusOpts,item.listingStatus)}<button class="history-icon" onclick="showStatusHistory(${item.sku},this)" title="Status history">&#9201;</button></td>`;
+  html += `<td class="cell-with-history"><div class="cell-with-history-inner">${makeSelect(item.sku,'listingStatus',statusOpts,item.listingStatus)}<button class="history-icon" onclick="showStatusHistory(${item.sku},this)" title="Status history">&#9201;</button></div></td>`;
   // --- Flexible listings: Channel / List $ / Listed ---
   const ls = item.listings || [{ channel: '', price: 0, dateListed: '' }];
   let chHtml = '<td class="listings-cell">';
