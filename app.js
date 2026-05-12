@@ -8,7 +8,7 @@ const ITEM_DB_TO_JS = {
   msrp: 'msrp', powers_on: 'powersOn', core_function: 'coreFunction',
   accessories: 'accessories', missing_items: 'missingItems',
   cosmetic_grade: 'cosmeticGrade', functional_grade: 'functionalGrade',
-  tier: 'tier', listed_condition: 'listedCondition', listing_status: 'listingStatus',
+  listed_condition: 'listedCondition', listing_status: 'listingStatus',
   // Legacy single/dual channel columns (read for backward compat, no longer written)
   listing_channel: 'listingChannel', list_price: 'listPrice', date_listed: 'dateListed',
   listing_channel_2: 'listingChannel2', list_price_2: 'listPrice2', date_listed_2: 'dateListed2',
@@ -89,16 +89,9 @@ function fmtPct(n) {
   return (Number(n) * 100).toFixed(1) + '%';
 }
 
-function calcTier(cosmetic, functional, powersOn, coreFunction) {
-  if (powersOn === 'No' || coreFunction === 'No' || functional === 'C' || cosmetic === 'C') return 'Tier 3';
-  if (cosmetic === 'B' || functional === 'B') return 'Tier 2';
-  return 'Tier 1';
-}
-
 function calcItem(item) {
   const lot = DATA.lots.find(l => l.id == item.lotId);
   item.unitCost = lot ? lot.costPerUnit : 0;
-  if (item.tier === undefined) item.tier = '';
   const sale = Number(item.salePrice) || 0;
   const fees = Number(item.platformFees) || 0;
   const ship = Number(item.shippingCost) || 0;
@@ -490,7 +483,6 @@ const DROPDOWN_OPTIONS = {
   accessories:     ['','Yes','No','Partial'],
   cosmeticGrade:   ['','A','B','C'],
   functionalGrade: ['','A (Sealed)','A','B','C'],
-  tier:            ['','Tier 1','Tier 2','Tier 3'],
   listedCondition: ['','OB/LN','New - Open Box','Used - Like New','Used - Good','Used - Fair','Salvage/Parts'],
   listingStatus:   ['Not Listed','Drafted','Listed','Pending','Sold'],
   listingChannel:  ['','FBM','FBA','eBay','Mercari','OfferUp','Facebook','Craigslist','Direct','Other'],
@@ -498,13 +490,13 @@ const DROPDOWN_OPTIONS = {
 };
 
 // Which dropdown fields are editable via right-click
-const EDITABLE_DROPDOWNS = ['category','powersOn','coreFunction','accessories','cosmeticGrade','functionalGrade','tier','listedCondition','listingStatus','listingChannel','paymentMethod'];
+const EDITABLE_DROPDOWNS = ['category','powersOn','coreFunction','accessories','cosmeticGrade','functionalGrade','listedCondition','listingStatus','listingChannel','paymentMethod'];
 
 // Friendly labels for the editor modal
 const DROPDOWN_LABELS = {
   category: 'Category', powersOn: 'Powers On', coreFunction: 'Core Function',
   accessories: 'Accessories', cosmeticGrade: 'Cosmetic Grade', functionalGrade: 'Functional Grade',
-  tier: 'Tier', listedCondition: 'Listed Condition', listingStatus: 'Status',
+  listedCondition: 'Listed Condition', listingStatus: 'Status',
   listingChannel: 'Listing Channel', paymentMethod: 'Payment Method'
 };
 
@@ -512,7 +504,7 @@ const DROPDOWN_LABELS = {
 const HEADER_TO_DROPDOWN = {
   category: 'category', powersOn: 'powersOn', coreFunction: 'coreFunction',
   accessories: 'accessories', cosmeticGrade: 'cosmeticGrade', functionalGrade: 'functionalGrade',
-  tier: 'tier', listedCondition: 'listedCondition', listingStatus: 'listingStatus',
+  listedCondition: 'listedCondition', listingStatus: 'listingStatus',
   listingChannel: 'listingChannel', paymentMethod: 'paymentMethod'
 };
 
@@ -693,7 +685,6 @@ async function saveItem() {
       missingItems: document.getElementById('itemMissing').value,
       cosmeticGrade: document.getElementById('itemCosmetic').value,
       functionalGrade: document.getElementById('itemFunctional').value,
-      tier: '',
       listedCondition: '',
       listingStatus: 'Not Listed',
       listings: [{ channel: '', price: 0, dateListed: '' }],
@@ -961,10 +952,6 @@ function itemRow(item, showAllCols=true) {
     html += `<td>${makeSelect(item.sku,'cosmeticGrade',DROPDOWN_OPTIONS.cosmeticGrade,item.cosmeticGrade)}</td>`;
     html += `<td>${makeSelect(item.sku,'functionalGrade',DROPDOWN_OPTIONS.functionalGrade,item.functionalGrade)}</td>`;
   }
-  const tierClass = item.tier==='Tier 1'?'tier-select-1':item.tier==='Tier 2'?'tier-select-2':'tier-select-3';
-  html += `<td><select class="${tierClass}" onchange="updateField(${item.sku},'tier',this.value);this.className='tier-select-'+(this.value==='Tier 1'?'1':this.value==='Tier 2'?'2':'3')">
-    ${DROPDOWN_OPTIONS.tier.map(t => `<option value="${t}" ${t===item.tier?'selected':''}>${t}</option>`).join('')}
-  </select></td>`;
   html += `<td>${makeSelect(item.sku,'listedCondition',conditionOptions(),item.listedCondition)}</td>`;
   html += `<td class="cell-with-history">${makeSelect(item.sku,'listingStatus',statusOpts,item.listingStatus)}<button class="history-icon" onclick="showStatusHistory(${item.sku},this)" title="Status history">&#9201;</button></td>`;
   // --- Flexible listings: Channel / List $ / Listed ---
@@ -1100,7 +1087,7 @@ const HEADER_FIELD_MAP_ALL = [
   {label:'Brand',field:'brand'},{label:'Model',field:'model'},
   {label:'Category',field:'category'},{label:'Unit Cost',field:'unitCost'},
   {label:'Cosmetic',field:'cosmeticGrade'},{label:'Functional',field:'functionalGrade'},
-  {label:'Tier',field:'tier'},{label:'Condition',field:'listedCondition'},{label:'Status',field:'listingStatus'},
+  {label:'Condition',field:'listedCondition'},{label:'Status',field:'listingStatus'},
   {label:'Channel',field:'listingChannel'},{label:'List $',field:'listPrice'},{label:'Listed',field:'dateListed'},
   {label:'Sale $',field:'salePrice'},{label:'Sold On',field:'soldPlatform'},{label:'Sold',field:'dateSold'},{label:'Payment',field:'paymentMethod'},
   {label:'Fees',field:'platformFees'},{label:'Shipping',field:'shippingCost'},{label:'Other $',field:'otherCosts'},
@@ -1115,7 +1102,7 @@ const HEADER_FIELD_MAP_SHORT = HEADER_FIELD_MAP_ALL.filter(h =>
 const COL_DEFAULT_WIDTHS = {
   sku: 130, photoCount: 80, lotId: 80, bstockItemCode: 100, brand: 155, model: 200, category: 140, unitCost: 120,
   powersOn: 120, coreFunction: 140, accessories: 130, missingItems: 155,
-  cosmeticGrade: 125, functionalGrade: 140, tier: 95, listedCondition: 140,
+  cosmeticGrade: 125, functionalGrade: 140, listedCondition: 140,
   listingStatus: 110, listingChannel: 125, listPrice: 110, dateListed: 135,
   salePrice: 110, soldPlatform: 120, dateSold: 135, paymentMethod: 135, platformFees: 110,
   shippingCost: 125, otherCosts: 110, netProceeds: 120, grossProfit: 120,
@@ -1546,11 +1533,9 @@ function renderAll() {
   const search = document.getElementById('searchAll').value;
   const lot = document.getElementById('filterLot').value;
   const status = document.getElementById('filterStatus').value;
-  const tier = document.getElementById('filterTier').value;
   let items = [...DATA.items];
   items = filterItems(items, search, lot);
   if (status) items = items.filter(i => i.listingStatus === status);
-  if (tier) items = items.filter(i => i.tier === tier);
   items = sortItems(items);
   let html = '<table>' + tableHeaders(true);
   items.forEach(i => html += itemRow(i, true));
@@ -1941,7 +1926,7 @@ function exportCSV() {
   DATA.items.forEach(i => calcItem(i));
   // Determine max listings across all items for dynamic columns
   const maxListings = Math.max(1, ...DATA.items.map(i => (i.listings || []).length));
-  const baseHeaders = ['SKU','Lot','Item #','Brand','Model','Category','Unit Cost','Powers On','Core Function','Accessories','Missing Items','Cosmetic Grade','Functional Grade','Tier','Listed Condition','Status'];
+  const baseHeaders = ['SKU','Lot','Item #','Brand','Model','Category','Unit Cost','Powers On','Core Function','Accessories','Missing Items','Cosmetic Grade','Functional Grade','Listed Condition','Status'];
   const listingHeaders = [];
   for (let n = 1; n <= maxListings; n++) {
     const suffix = maxListings > 1 ? ` ${n}` : '';
@@ -1951,7 +1936,7 @@ function exportCSV() {
   const headers = [...baseHeaders, ...listingHeaders, ...tailHeaders];
   const rows = DATA.items.map(i => {
     const base = [i.sku,i.lotId,i.bstockItemCode||'',i.brand,i.model,i.category,i.unitCost,i.powersOn,i.coreFunction,i.accessories,i.missingItems,
-      i.cosmeticGrade,i.functionalGrade,i.tier,i.listedCondition,statusLabel(i.listingStatus)];
+      i.cosmeticGrade,i.functionalGrade,i.listedCondition,statusLabel(i.listingStatus)];
     const listingCols = [];
     for (let n = 0; n < maxListings; n++) {
       const l = (i.listings || [])[n] || {};

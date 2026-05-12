@@ -95,7 +95,6 @@ async function runMigration() {
       sku: d.sku, lot_id: 1, category: d.cat, brand: d.brand, model: d.model,
       msrp: d.msrp, powers_on: d.pow, core_function: d.fn, accessories: d.acc,
       missing_items: d.miss, cosmetic_grade: d.cos, functional_grade: d.func,
-      tier: calcTier(d.cos, d.func, d.pow, d.fn),
       listed_condition: d.cond, listing_status: d.status, listing_channel: d.ch,
       list_price: d.lp, date_listed: d.dl || null, sale_price: d.sp, date_sold: d.ds || null,
       payment_method: d.pay, platform_fees: d.fees, shipping_cost: d.ship,
@@ -136,7 +135,7 @@ async function runMigration() {
       sku: d.sku, lot_id: 2, category: 'Home & Kitchen', brand: d.brand, model: d.model,
       msrp: d.msrp, powers_on: 'Not Tested (Sealed)', core_function: 'Not Tested (Sealed)',
       accessories: 'Yes', missing_items: '', cosmetic_grade: 'A', functional_grade: 'A (Sealed)',
-      tier: 'Tier 1', listed_condition: '', listing_status: 1, listing_channel: '',
+      listed_condition: '', listing_status: 1, listing_channel: '',
       list_price: 0, date_listed: null, sale_price: 0, date_sold: null,
       payment_method: '', platform_fees: 0, shipping_cost: 0, other_costs: 0, notes: d.notes
     }));
@@ -324,7 +323,7 @@ async function runMigration() {
       sku: skuCounter++, lot_id: 3, category: 'Home & Kitchen', brand: d.brand, model: d.model,
       msrp: d.msrp, powers_on: 'Not Tested (Sealed)', core_function: 'Not Tested (Sealed)',
       accessories: 'Yes', missing_items: '', cosmetic_grade: 'A', functional_grade: 'A (Sealed)',
-      tier: 'Tier 1', listed_condition: '', listing_status: 1, listing_channel: '',
+      listed_condition: '', listing_status: 1, listing_channel: '',
       list_price: 0, date_listed: null, sale_price: 0, date_sold: null,
       payment_method: '', platform_fees: 0, shipping_cost: 0, other_costs: 0, notes: d.notes
     }));
@@ -350,11 +349,6 @@ async function runMigration() {
   ok('You can now open index.html — it will load from the database!');
 }
 
-function calcTier(cosmetic, functional, powersOn, coreFunction) {
-  if (powersOn === 'No' || coreFunction === 'No' || functional === 'C' || cosmetic === 'C') return 'Tier 3';
-  if (cosmetic === 'B' || functional === 'B') return 'Tier 2';
-  return 'Tier 1';
-}
 </script>
 </body>
 </html>

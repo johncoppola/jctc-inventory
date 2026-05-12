@@ -33,7 +33,6 @@ CREATE TABLE items (
   missing_items    TEXT NOT NULL DEFAULT '',
   cosmetic_grade   TEXT NOT NULL DEFAULT 'A',
   functional_grade TEXT NOT NULL DEFAULT 'A (Sealed)',
-  tier             TEXT NOT NULL DEFAULT 'Tier 1',
   listed_condition TEXT NOT NULL DEFAULT '',
   listing_status   TEXT NOT NULL DEFAULT 'Not Listed',
   listing_channel  TEXT NOT NULL DEFAULT '',   -- legacy (kept for backward compat)
@@ -210,6 +209,6 @@ CREATE TRIGGER item_photos_one_hero_trigger
 --       AND pricing_brief_at IS NULL AND auto_trigger_error IS NULL;
 --   CREATE FUNCTION find_auto_trigger_candidates() RETURNS TABLE (...)
 --     — returns SKUs ready for auto-triggered pricing + eBay/FBM drafting.
---     Criteria: Not Listed, not snoozed, all four manual fields set
---     (cosmetic, functional, tier, listed_condition), photos >= 4,
+--     Criteria: Not Listed, not snoozed, all three manual fields set
+--     (cosmetic, functional, listed_condition), photos >= 4,
 --     never priced, no prior unrecovered error, no listings entries.
