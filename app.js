@@ -484,7 +484,7 @@ const DROPDOWN_OPTIONS = {
   cosmeticGrade:   ['','A','B','C'],
   functionalGrade: ['','A (Sealed)','A','B','C'],
   listedCondition: ['','OB/LN','New - Open Box','Used - Like New','Used - Good','Used - Fair','Salvage/Parts'],
-  listingStatus:   ['Not Listed','Drafted','Listed','Pending','Sold'],
+  listingStatus:   ['Not Listed','Ready','Drafted','Listed','Pending','Sold'],
   listingChannel:  ['','FBM','FBA','eBay','Mercari','OfferUp','Facebook','Craigslist','Direct','Other'],
   paymentMethod:   ['','Cash','Venmo','CashApp','Zelle','PayPal','Credit Card','Cash & Venmo','Other']
 };
