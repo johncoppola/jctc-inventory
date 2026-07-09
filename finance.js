@@ -104,7 +104,7 @@ function renderFinSubTab() {
 
 function setFinTab(t) { _finTab = t; renderFinSubTab(); }
 
-function setFinYear(y) { _finYear = Number(y); _expMonth = ''; renderFinSubTab(); }
+function setFinYear(y) { _finYear = Number(y); _expMonth = ''; _updateFinYearSelect(); renderFinSubTab(); }
 
 function _updateFinYearSelect() {
   const sel = document.getElementById('finYear');
@@ -385,6 +385,11 @@ function updateExpense(id, field, value) {
     if (!value) { renderFinExpTable(); return; } // date is required
     e.date = value;
     patch.date = value;
+    const newYear = Number(value.slice(0, 4));
+    if (newYear !== _finYear) {
+      _updateFinYearSelect();
+      toast(`Dated ${newYear} — switch the year selector to see it`);
+    }
   } else if (field === 'in_pl') {
     e.in_pl = !!value;
     patch.in_pl = e.in_pl;
@@ -532,8 +537,13 @@ async function saveExpense() {
     if (saved && saved.id) FIN.expenses.unshift(saved);
     closeExpenseModal();
     updateReimbBadge();
+    // Follow the expense into its year so it never "disappears" after saving
+    const expYear = Number(date.slice(0, 4));
+    const switched = expYear !== _finYear;
+    if (switched) { _finYear = expYear; _expMonth = ''; }
+    _updateFinYearSelect();
     renderFinSubTab();
-    toast(`Expense added — ${fmt(amount)}`);
+    toast(`Expense added — ${fmt(amount)}${switched ? ` (viewing ${expYear})` : ''}`);
   } catch (err) {
     console.error('saveExpense error:', err);
     toast('Error saving expense — check console');
@@ -753,8 +763,12 @@ async function addMileage() {
     const inserted = await supabase.insert('mileage_log', { date, purpose, miles });
     const saved = Array.isArray(inserted) ? inserted[0] : inserted;
     if (saved && saved.id) FIN.mileage.unshift(saved);
+    const tripYear = Number(date.slice(0, 4));
+    const switched = tripYear !== _finYear;
+    if (switched) _finYear = tripYear;
+    _updateFinYearSelect();
     renderFinMileage();
-    toast(`Trip logged — ${miles} mi`);
+    toast(`Trip logged — ${miles} mi${switched ? ` (viewing ${tripYear})` : ''}`);
   } catch (err) {
     console.error('addMileage error:', err);
     toast('Error logging trip — check console');
