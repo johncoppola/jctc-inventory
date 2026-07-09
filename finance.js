@@ -13,6 +13,56 @@ let _expCat = '';
 let _expPaidFrom = '';
 let _expSearch = '';
 
+// Per-table sort state for the finance tables (click a column header to sort)
+const _finSorts = {
+  exp:   { field: 'date', dir: 'desc' },
+  rec:   { field: 'day_of_month', dir: 'asc' },
+  mil:   { field: 'date', dir: 'desc' },
+  trf:   { field: 'date', dir: 'desc' },
+  reimb: { field: 'reimbursement_status', dir: 'asc' } // Owed sorts before Reimbursed
+};
+const _FIN_NUMERIC_FIELDS = ['amount', 'miles', 'day_of_month'];
+const _FIN_BOOL_FIELDS = ['in_pl', 'active'];
+
+function finSort(table, field) {
+  const s = _finSorts[table];
+  if (s.field === field) s.dir = s.dir === 'asc' ? 'desc' : 'asc';
+  else { s.field = field; s.dir = 'asc'; }
+  if (table === 'exp') renderFinExpTable();
+  else renderFinSubTab();
+}
+
+function _finSortRows(rows, table) {
+  const { field, dir } = _finSorts[table];
+  const d = dir === 'asc' ? 1 : -1;
+  return [...rows].sort((a, b) => {
+    let cmp;
+    if (_FIN_NUMERIC_FIELDS.includes(field)) {
+      cmp = (Number(a[field]) || 0) - (Number(b[field]) || 0);
+    } else if (_FIN_BOOL_FIELDS.includes(field)) {
+      cmp = (a[field] ? 1 : 0) - (b[field] ? 1 : 0);
+    } else {
+      cmp = String(a[field] == null ? '' : a[field]).toLowerCase()
+        .localeCompare(String(b[field] == null ? '' : b[field]).toLowerCase());
+    }
+    // Tiebreak: newest first, then id, so equal values keep a stable order
+    return cmp * d
+      || String(b.date || '').localeCompare(String(a.date || ''))
+      || (b.id || 0) - (a.id || 0);
+  });
+}
+
+// Sortable <th>. extraAttrs lets category/paid-from headers keep their
+// data-sort-field attribute for the right-click dropdown editor.
+function _finTh(table, field, label, extraAttrs = '') {
+  const s = _finSorts[table];
+  const arrow = s.field === field ? (s.dir === 'asc' ? '▲' : '▼') : '▲';
+  const cls = s.field === field ? ' class="sorted"' : '';
+  return `<th${cls} ${extraAttrs} onclick="finSort('${table}','${field}')" title="Sort by ${label.replace(/<[^>]*>/g, '')}">${label}<span class="sort-arrow">${arrow}</span></th>`;
+}
+
+const FIN_EDIT_HINT = '<p class="fin-note">Tip: every cell is editable — click into it, change it, and it saves automatically. Click a column header to sort.</p>';
+
 // Register finance dropdowns in the shared store so the right-click
 // header editor works on them like every other dropdown in the app.
 DROPDOWN_OPTIONS.expenseCategory = [
@@ -340,15 +390,19 @@ function _expSelect(id, field, options, current) {
 }
 
 function renderFinExpTable() {
-  const rows = _filteredExpenses();
+  const tableEl = document.getElementById('finExpTable');
+  if (!tableEl) return;
+  const rows = _finSortRows(_filteredExpenses(), 'exp');
   const total = rows.reduce((s, e) => s + (Number(e.amount) || 0), 0);
   const totalEl = document.getElementById('expFilterTotal');
   if (totalEl) totalEl.textContent = `${rows.length} expense${rows.length === 1 ? '' : 's'} · ${fmt(total)}`;
 
   let html = `<div class="table-wrap fin-tablewrap"><table class="fin-table"><thead><tr>
-    <th>Date</th><th>Amount</th><th data-sort-field="expenseCategory">Category</th><th>Vendor</th>
-    <th>Description</th><th data-sort-field="paidFrom">Paid From</th><th>Reimb.</th>
-    <th>Receipt</th><th title="Included in P&L">P&amp;L</th><th>Del</th>
+    ${_finTh('exp', 'date', 'Date')}${_finTh('exp', 'amount', 'Amount')}
+    ${_finTh('exp', 'category', 'Category', 'data-sort-field="expenseCategory"')}${_finTh('exp', 'vendor', 'Vendor')}
+    ${_finTh('exp', 'description', 'Description')}${_finTh('exp', 'paid_from', 'Paid From', 'data-sort-field="paidFrom"')}
+    ${_finTh('exp', 'reimbursement_status', 'Reimb.')}
+    <th>Receipt</th>${_finTh('exp', 'in_pl', 'P&amp;L')}<th>Del</th>
   </tr></thead><tbody>`;
   rows.forEach(e => {
     const srcTag = e.source && e.source !== 'manual'
@@ -374,8 +428,8 @@ function renderFinExpTable() {
       No expenses ${_expMonth || _expCat || _expPaidFrom || _expSearch ? 'match these filters' : `logged for ${_finYear} yet — click "+ Expense" above to add one`}.
     </td></tr>`;
   }
-  html += '</tbody></table></div>';
-  document.getElementById('finExpTable').innerHTML = html;
+  html += '</tbody></table></div>' + FIN_EDIT_HINT;
+  tableEl.innerHTML = html;
 }
 
 function updateExpense(id, field, value) {
@@ -434,7 +488,10 @@ function updateExpense(id, field, value) {
       toast('Error saving expense — check console');
     }
   }, 300);
-  if (cascaded || field === 'reimbursement_status') renderFinExpTable();
+  if (cascaded || field === 'reimbursement_status') {
+    // Re-render whichever sub-tab is showing (Expenses or Reimbursements)
+    if (_finTab === 'expenses') renderFinExpTable(); else renderFinSubTab();
+  }
   updateReimbBadge();
 }
 
@@ -568,10 +625,12 @@ function renderFinRecurring() {
     <span class="fin-filter-total">Templates for storage rent, subscriptions, etc. — one click posts them to the expense log each month.</span>
   </div>
   <div class="table-wrap fin-tablewrap"><table class="fin-table"><thead><tr>
-    <th>Name</th><th>Amount</th><th data-sort-field="expenseCategory">Category</th><th>Vendor</th>
-    <th data-sort-field="paidFrom">Paid From</th><th>Day of Month</th><th>Active</th><th>This Month</th><th>Del</th>
+    ${_finTh('rec', 'name', 'Name')}${_finTh('rec', 'amount', 'Amount')}
+    ${_finTh('rec', 'category', 'Category', 'data-sort-field="expenseCategory"')}${_finTh('rec', 'vendor', 'Vendor')}
+    ${_finTh('rec', 'paid_from', 'Paid From', 'data-sort-field="paidFrom"')}${_finTh('rec', 'day_of_month', 'Day of Month')}
+    ${_finTh('rec', 'active', 'Active')}<th>This Month</th><th>Del</th>
   </tr></thead><tbody>`;
-  FIN.recurring.forEach(r => {
+  _finSortRows(FIN.recurring, 'rec').forEach(r => {
     const posted = _recurringPostedThisMonth(r.id);
     html += `<tr class="${r.active ? '' : 'fin-inactive-row'}">
       <td><input type="text" value="${finEsc(r.name)}" onchange="updateRecurring(${r.id},'name',this.value)"></td>
@@ -591,7 +650,7 @@ function renderFinRecurring() {
     html += `<tr><td colspan="9" style="text-align:center;padding:24px;color:var(--text-dim)">
       No recurring expenses yet. Add storage rent, software subscriptions, phone/internet — anything that repeats monthly.</td></tr>`;
   }
-  html += '</tbody></table></div>';
+  html += '</tbody></table></div>' + FIN_EDIT_HINT;
   document.getElementById('finContent').innerHTML = html;
 }
 
@@ -738,9 +797,10 @@ function renderFinMileage() {
     <button class="btn btn-primary" onclick="addMileage()">+ Add Trip</button>
   </div>
   <div class="table-wrap fin-tablewrap"><table class="fin-table"><thead><tr>
-    <th>Date</th><th>Purpose</th><th>Miles</th><th>Deduction</th><th>Notes</th><th>Del</th>
+    ${_finTh('mil', 'date', 'Date')}${_finTh('mil', 'purpose', 'Purpose')}${_finTh('mil', 'miles', 'Miles')}
+    <th>Deduction</th>${_finTh('mil', 'notes', 'Notes')}<th>Del</th>
   </tr></thead><tbody>`;
-  rows.forEach(m => {
+  _finSortRows(rows, 'mil').forEach(m => {
     html += `<tr>
       <td><input type="date" value="${finEsc(m.date || '')}" onchange="updateMileage(${m.id},'date',this.value)"></td>
       <td><input type="text" value="${finEsc(m.purpose)}" onchange="updateMileage(${m.id},'purpose',this.value)"></td>
@@ -754,7 +814,7 @@ function renderFinMileage() {
     html += `<tr><td colspan="6" style="text-align:center;padding:24px;color:var(--text-dim)">
       No trips logged for ${_finYear}. Post office runs, supply runs, and lot pickups all count — log them or lose the deduction.</td></tr>`;
   }
-  html += '</tbody></table></div>';
+  html += '</tbody></table></div>' + FIN_EDIT_HINT;
   document.getElementById('finContent').innerHTML = html;
 }
 
@@ -833,9 +893,7 @@ async function saveMileageRate(value) {
 // Tracks money John fronted from personal accounts (pre-Feb-2026 Venture X
 // charges, personal-savings lot payments, etc.) until the LLC pays it back.
 function renderFinReimb() {
-  const rows = FIN.expenses.filter(e => e.reimbursement_status !== 'N/A')
-    .sort((a, b) => (a.reimbursement_status === 'Owed' ? 0 : 1) - (b.reimbursement_status === 'Owed' ? 0 : 1)
-      || (b.date || '').localeCompare(a.date || ''));
+  const rows = _finSortRows(FIN.expenses.filter(e => e.reimbursement_status !== 'N/A'), 'reimb');
   const owed = rows.filter(e => e.reimbursement_status === 'Owed');
   const owedTotal = owed.reduce((s, e) => s + (Number(e.amount) || 0), 0);
   const reimbTotal = rows.filter(e => e.reimbursement_status === 'Reimbursed')
@@ -846,18 +904,20 @@ function renderFinReimb() {
     <div class="stat-card"><div class="label">Reimbursed to Date</div><div class="value">${fmt(reimbTotal)}</div><div class="sub">All years</div></div>
   </div>
   <div class="table-wrap fin-tablewrap"><table class="fin-table"><thead><tr>
-    <th>Date</th><th>Amount</th><th>Category</th><th>Vendor</th><th>Description</th>
-    <th>Paid From</th><th>Status</th><th>Reimbursed On</th><th>Action</th>
+    ${_finTh('reimb', 'date', 'Date')}${_finTh('reimb', 'amount', 'Amount')}
+    ${_finTh('reimb', 'category', 'Category', 'data-sort-field="expenseCategory"')}${_finTh('reimb', 'vendor', 'Vendor')}
+    ${_finTh('reimb', 'description', 'Description')}${_finTh('reimb', 'paid_from', 'Paid From', 'data-sort-field="paidFrom"')}
+    ${_finTh('reimb', 'reimbursement_status', 'Status')}${_finTh('reimb', 'reimbursed_date', 'Reimbursed On')}<th>Action</th>
   </tr></thead><tbody>`;
   rows.forEach(e => {
     const isOwed = e.reimbursement_status === 'Owed';
     html += `<tr>
-      <td>${finEsc(e.date || '')}</td>
-      <td class="money-cell">${fmt(e.amount)}</td>
-      <td>${finEsc(e.category)}</td>
-      <td>${finEsc(e.vendor)}</td>
-      <td>${finEsc(e.description)}</td>
-      <td>${finEsc(e.paid_from)}</td>
+      <td><input type="date" value="${finEsc(e.date || '')}" onchange="updateExpense(${e.id},'date',this.value)"></td>
+      <td class="money-cell">$<input type="text" inputmode="decimal" value="${e.amount || ''}" onchange="updateExpense(${e.id},'amount',this.value)"></td>
+      <td>${_expSelect(e.id, 'category', ['', ...DROPDOWN_OPTIONS.expenseCategory.filter(Boolean)], e.category)}</td>
+      <td><input type="text" value="${finEsc(e.vendor)}" onchange="updateExpense(${e.id},'vendor',this.value)"></td>
+      <td><input type="text" value="${finEsc(e.description)}" onchange="updateExpense(${e.id},'description',this.value)"></td>
+      <td>${_expSelect(e.id, 'paid_from', DROPDOWN_OPTIONS.paidFrom, e.paid_from)}</td>
       <td><span class="fin-reimb-status ${isOwed ? 'is-owed' : 'is-done'}">${finEsc(e.reimbursement_status)}</span></td>
       <td>${finEsc(e.reimbursed_date || '—')}</td>
       <td>${isOwed
@@ -870,7 +930,7 @@ function renderFinReimb() {
       Nothing tracked yet. Add expenses with "Paid From" set to a Personal account (they auto-mark as Owed) —
       including the early Venture X charges and the lots paid from personal savings.</td></tr>`;
   }
-  html += `</tbody></table></div>
+  html += `</tbody></table></div>` + FIN_EDIT_HINT + `
   <p class="fin-note">Shows all years, not just ${_finYear}. When the LLC pays you back, send one transfer per expense
     (or one batch with a note listing what it covers) from a business account, then click "Mark reimbursed" —
     that keeps the paper trail clean for liability protection. Lot purchases fronted personally should be logged
@@ -909,9 +969,11 @@ function renderFinTransfers() {
     <button class="btn btn-primary" onclick="addTransfer()">+ Add Transfer</button>
   </div>
   <div class="table-wrap fin-tablewrap"><table class="fin-table"><thead><tr>
-    <th>Date</th><th>Type</th><th>Amount</th><th>From</th><th>To</th><th>Purpose</th><th>Notes</th><th>Del</th>
+    ${_finTh('trf', 'date', 'Date')}${_finTh('trf', 'direction', 'Type')}${_finTh('trf', 'amount', 'Amount')}
+    ${_finTh('trf', 'from_account', 'From')}${_finTh('trf', 'to_account', 'To')}
+    ${_finTh('trf', 'purpose', 'Purpose')}${_finTh('trf', 'notes', 'Notes')}<th>Del</th>
   </tr></thead><tbody>`;
-  rows.forEach(t => {
+  _finSortRows(rows, 'trf').forEach(t => {
     html += `<tr>
       <td><input type="date" value="${finEsc(t.date || '')}" onchange="updateTransfer(${t.id},'date',this.value)"></td>
       <td><select onchange="updateTransfer(${t.id},'direction',this.value)">
@@ -931,7 +993,7 @@ function renderFinTransfers() {
       No transfers logged yet. Add each time you moved personal money into Relay to fund the business
       (Contribution), or took business money out for yourself (Draw).</td></tr>`;
   }
-  html += `</tbody></table></div>
+  html += `</tbody></table></div>` + FIN_EDIT_HINT + `
   <p class="fin-note">Shows all years. <strong>Contributions</strong> are your personal money funding the LLC —
     not income, not in the P&amp;L. <strong>Draws</strong> are business money you take for yourself — not an
     expense, and (heads up) not what you're taxed on: as a single-member LLC you're taxed on <em>profit</em>,
