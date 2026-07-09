@@ -2,6 +2,24 @@
 -- JCTC Inventory Tracker — Supabase Schema
 -- Run this in the Supabase SQL Editor (one time)
 -- =====================================================
+--
+-- NEW TABLE CHECKLIST — required for every new public.* table from Oct 30, 2026.
+-- Supabase will stop auto-granting Data API access on that date, so any new
+-- table must include all four steps below or supabase-js will get a 42501 error.
+--
+--   CREATE TABLE public.your_table ( ... );
+--
+--   GRANT SELECT, INSERT, UPDATE, DELETE ON public.your_table TO anon;
+--   GRANT SELECT, INSERT, UPDATE, DELETE ON public.your_table TO authenticated;
+--   GRANT SELECT, INSERT, UPDATE, DELETE ON public.your_table TO service_role;
+--
+--   ALTER TABLE public.your_table ENABLE ROW LEVEL SECURITY;
+--
+--   CREATE POLICY "Allow all on your_table" ON public.your_table
+--     FOR ALL USING (true) WITH CHECK (true);
+--
+-- (Single-user app — permissive policy is intentional. See section 5 below.)
+-- =====================================================
 
 -- 1. LOTS TABLE
 CREATE TABLE lots (
@@ -170,9 +188,64 @@ CREATE TRIGGER item_photos_one_hero_trigger
 -- Permissive RLS policies on storage.objects for SELECT/INSERT/UPDATE/DELETE
 -- where bucket_id = 'item-photos'. (Single-user app — same model as the public tables.)
 
+-- 9. FINANCES (Finances tab) — expenses, recurring templates, mileage log.
+--    All three follow the NEW TABLE CHECKLIST above (grants + RLS + permissive
+--    policy + sequence grants). app_config gains a 'mileage_rate' key.
+
+CREATE TABLE recurring_expenses (
+  id           BIGSERIAL PRIMARY KEY,
+  name         TEXT NOT NULL DEFAULT '',
+  amount       NUMERIC(10,2) NOT NULL DEFAULT 0,
+  category     TEXT NOT NULL DEFAULT '',
+  vendor       TEXT NOT NULL DEFAULT '',
+  paid_from    TEXT NOT NULL DEFAULT '',
+  day_of_month INTEGER NOT NULL DEFAULT 1 CHECK (day_of_month BETWEEN 1 AND 31),
+  active       BOOLEAN NOT NULL DEFAULT true,
+  notes        TEXT NOT NULL DEFAULT ''
+);
+
+CREATE TABLE expenses (
+  id                   BIGSERIAL PRIMARY KEY,
+  date                 DATE NOT NULL,
+  amount               NUMERIC(10,2) NOT NULL DEFAULT 0,
+  category             TEXT NOT NULL DEFAULT '',
+  vendor               TEXT NOT NULL DEFAULT '',
+  description          TEXT NOT NULL DEFAULT '',
+  paid_from            TEXT NOT NULL DEFAULT '',
+  -- 'N/A' (business-paid) | 'Owed' (personal-paid, awaiting payback) | 'Reimbursed'
+  reimbursement_status TEXT NOT NULL DEFAULT 'N/A' CHECK (reimbursement_status IN ('N/A','Owed','Reimbursed')),
+  reimbursed_date      DATE,
+  receipt_url          TEXT NOT NULL DEFAULT '',
+  -- false = record-keeping only, excluded from P&L (e.g. lot purchases whose
+  -- cost already flows through lots -> items COGS; counting here would double-count)
+  in_pl                BOOLEAN NOT NULL DEFAULT true,
+  source               TEXT NOT NULL DEFAULT 'manual',  -- 'manual' | 'recurring' | 'monarch'
+  recurring_id         BIGINT REFERENCES recurring_expenses(id) ON DELETE SET NULL,
+  notes                TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX expenses_date_idx ON expenses (date DESC);
+CREATE INDEX expenses_recurring_idx ON expenses (recurring_id) WHERE recurring_id IS NOT NULL;
+
+CREATE TABLE mileage_log (
+  id      BIGSERIAL PRIMARY KEY,
+  date    DATE NOT NULL,
+  purpose TEXT NOT NULL DEFAULT '',
+  miles   NUMERIC(7,1) NOT NULL DEFAULT 0,
+  notes   TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX mileage_log_date_idx ON mileage_log (date DESC);
+
+-- IRS standard mileage rate, editable from the Finances > Mileage tab
+INSERT INTO app_config (key, value) VALUES ('mileage_rate', '0.70')
+  ON CONFLICT (key) DO NOTHING;
+
 -- =====================================================
 -- MIGRATION HISTORY (already applied — DO NOT re-run)
 -- =====================================================
+-- Migration 12 (finance_tab_expenses_recurring_mileage): expenses,
+--   recurring_expenses, mileage_log tables per section 9 above, with full
+--   grants (incl. sequences) + RLS + permissive policies per the checklist,
+--   and the app_config 'mileage_rate' seed row.
 -- Migration 1: listing_channel_2, list_price_2, date_listed_2
 -- Migration 2: sold_platform
 -- Migration 3: listings JSONB column (replaces listing_channel/list_price/date_listed pairs)

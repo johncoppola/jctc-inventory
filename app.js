@@ -567,6 +567,7 @@ function renderCurrentView() {
   else if (active === 'repricing') renderRepricing();
   else if (active === 'sold') renderSold();
   else if (active === 'lots') renderLots();
+  else if (active === 'finances') renderFinances();
 }
 
 // ===== LOT MANAGEMENT =====
@@ -1170,6 +1171,7 @@ function reRenderCurrentView() {
   else if (tab === 'open') renderOpen();
   else if (tab === 'sold') renderSold();
   else if (tab === 'lots') renderLots();
+  else if (tab === 'finances') renderFinSubTab();
 }
 
 function filterItems(items, search, lotFilter) {

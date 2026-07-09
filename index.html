@@ -27,6 +27,7 @@
     <div class="tab" data-tab="repricing">Repricing<span class="tab-badge" id="repricingBadge" style="display:none">0</span></div>
     <div class="tab" data-tab="sold">Sold Items</div>
     <div class="tab" data-tab="lots">Lots / Pallets</div>
+    <div class="tab" data-tab="finances">Finances</div>
   </div>
 
   <!-- Dashboard View -->
@@ -190,6 +191,23 @@
   <div id="view-lots" class="view" style="display:none">
     <div id="lotCards"></div>
   </div>
+
+  <!-- Finances View -->
+  <div id="view-finances" class="view" style="display:none">
+    <div class="toolbar fin-toolbar">
+      <div class="fin-subtabs">
+        <button class="fin-subtab active" data-fin="pl" onclick="setFinTab('pl')">P&amp;L</button>
+        <button class="fin-subtab" data-fin="expenses" onclick="setFinTab('expenses')">Expenses</button>
+        <button class="fin-subtab" data-fin="recurring" onclick="setFinTab('recurring')">Recurring</button>
+        <button class="fin-subtab" data-fin="mileage" onclick="setFinTab('mileage')">Mileage</button>
+        <button class="fin-subtab" data-fin="reimb" onclick="setFinTab('reimb')">Reimbursements<span class="tab-badge" id="reimbBadge" style="display:none">0</span></button>
+      </div>
+      <div style="flex:1"></div>
+      <select id="finYear" onchange="setFinYear(this.value)"></select>
+      <button class="btn btn-primary" onclick="showExpenseModal()">+ Expense</button>
+    </div>
+    <div id="finContent"></div>
+  </div>
 </div>
 
 <!-- Lot Modal -->
@@ -248,6 +266,47 @@
     <div class="modal-actions">
       <button class="btn" onclick="closeItemModal()">Cancel</button>
       <button class="btn btn-primary" onclick="saveItem()">Save Item</button>
+    </div>
+  </div>
+</div>
+
+<!-- Expense Modal -->
+<div class="modal-overlay" id="expenseModal">
+  <div class="modal">
+    <h2>Add Expense</h2>
+    <div class="form-grid">
+      <div class="form-group"><label>Date</label><input id="expDate" type="date"></div>
+      <div class="form-group"><label>Amount ($)</label><input id="expAmount" type="number" step="0.01" min="0"></div>
+      <div class="form-group"><label>Category</label><select id="expCategory" onchange="_expModalCategoryChanged()"></select></div>
+      <div class="form-group"><label>Vendor</label><input id="expVendor" type="text" placeholder="e.g., Uline, PirateShip"></div>
+      <div class="form-group full"><label>Description</label><input id="expDescription" type="text" placeholder="What was it for?"></div>
+      <div class="form-group"><label>Paid From</label><select id="expPaidFrom" onchange="_expModalPaidFromChanged()"></select></div>
+      <div class="form-group"><label>Reimbursement</label><select id="expReimb"></select></div>
+      <div class="form-group full"><label>Receipt Link <span style="color:var(--text-dim);font-weight:400">— Google Drive URL, optional</span></label><input id="expReceipt" type="url" placeholder="https://drive.google.com/..."></div>
+      <div class="form-group full fin-checkbox-group"><label><input id="expInPl" type="checkbox" checked> Count in P&amp;L <span style="color:var(--text-dim);font-weight:400">(auto-unchecks for lot purchases — those are already COGS in the Lots tab)</span></label></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeExpenseModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="saveExpense()">Save Expense</button>
+    </div>
+  </div>
+</div>
+
+<!-- Recurring Expense Modal -->
+<div class="modal-overlay" id="recurringModal">
+  <div class="modal">
+    <h2>Add Recurring Expense</h2>
+    <div class="form-grid">
+      <div class="form-group"><label>Name</label><input id="recName" type="text" placeholder="e.g., Storage unit rent"></div>
+      <div class="form-group"><label>Amount ($)</label><input id="recAmount" type="number" step="0.01" min="0"></div>
+      <div class="form-group"><label>Category</label><select id="recCategory"></select></div>
+      <div class="form-group"><label>Vendor</label><input id="recVendor" type="text"></div>
+      <div class="form-group"><label>Paid From</label><select id="recPaidFrom"></select></div>
+      <div class="form-group"><label>Day of Month</label><input id="recDay" type="number" min="1" max="31" value="1"></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeRecurringModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="saveRecurring()">Save Recurring</button>
     </div>
   </div>
 </div>
@@ -322,5 +381,6 @@
 <script src="supabase.js"></script>
 <script src="photos.js"></script>
 <script src="app.js"></script>
+<script src="finance.js"></script>
 </body>
 </html>
