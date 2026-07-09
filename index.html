@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>JCTC Reselling Inventory Tracker</title>
-<link rel="stylesheet" href="styles.css">
+<link rel="stylesheet" href="styles.css?v=2026-07-09-1">
 </head>
 <body>
 <div class="app">
@@ -379,9 +379,10 @@
 <div class="toast" id="toast"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
-<script src="supabase.js"></script>
-<script src="photos.js"></script>
-<script src="app.js"></script>
-<script src="finance.js"></script>
+<!-- Bump ?v= on every deploy that touches these files so browsers never run stale code -->
+<script src="supabase.js?v=2026-07-09-1"></script>
+<script src="photos.js?v=2026-07-09-1"></script>
+<script src="app.js?v=2026-07-09-1"></script>
+<script src="finance.js?v=2026-07-09-1"></script>
 </body>
 </html>
