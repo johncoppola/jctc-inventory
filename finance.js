@@ -140,7 +140,6 @@ async function renderFinances() {
   }
   await loadFinanceData(); // cheap — keeps Monarch/agent-inserted rows fresh
   _updateFinYearSelect();
-  updateReimbBadge();
   renderFinSubTab();
 }
 
@@ -171,14 +170,6 @@ function _updateFinYearSelect() {
   const list = [...years].filter(y => y > 2000).sort((a, b) => b - a);
   if (!list.includes(_finYear)) _finYear = list[0];
   sel.innerHTML = list.map(y => `<option value="${y}"${y === _finYear ? ' selected' : ''}>${y}</option>`).join('');
-}
-
-function updateReimbBadge() {
-  const badge = document.getElementById('reimbBadge');
-  if (!badge) return;
-  const owed = FIN.expenses.filter(e => e.reimbursement_status === 'Owed').length;
-  badge.textContent = owed;
-  badge.style.display = owed > 0 ? '' : 'none';
 }
 
 // ===== P&L =====
@@ -492,7 +483,6 @@ function updateExpense(id, field, value) {
     // Re-render whichever sub-tab is showing (Expenses or Reimbursements)
     if (_finTab === 'expenses') renderFinExpTable(); else renderFinSubTab();
   }
-  updateReimbBadge();
 }
 
 async function setExpenseReceipt(id) {
@@ -520,8 +510,8 @@ async function deleteExpense(id) {
   try {
     await supabase.delete('expenses', `id=eq.${id}`);
     FIN.expenses = FIN.expenses.filter(x => x.id !== id);
-    renderFinExpTable();
-    updateReimbBadge();
+    // Re-render whichever sub-tab is showing (Expenses or Reimbursements)
+    if (_finTab === 'expenses') renderFinExpTable(); else renderFinSubTab();
     toast('Expense deleted');
   } catch (err) {
     console.error('deleteExpense error:', err);
@@ -597,7 +587,6 @@ async function saveExpense() {
     const saved = Array.isArray(inserted) ? inserted[0] : inserted;
     if (saved && saved.id) FIN.expenses.unshift(saved);
     closeExpenseModal();
-    updateReimbBadge();
     // Follow the expense into its year so it never "disappears" after saving
     const expYear = Number(date.slice(0, 4));
     const switched = expYear !== _finYear;
@@ -719,7 +708,6 @@ async function postRecurring(id, opts = {}) {
     const saved = Array.isArray(inserted) ? inserted[0] : inserted;
     if (saved && saved.id) FIN.expenses.unshift(saved);
     if (!opts.silent) { renderFinRecurring(); toast(`Posted ${r.name || 'expense'} — ${fmt(row.amount)}`); }
-    updateReimbBadge();
     return true;
   } catch (err) {
     console.error('postRecurring error:', err);
@@ -907,7 +895,7 @@ function renderFinReimb() {
     ${_finTh('reimb', 'date', 'Date')}${_finTh('reimb', 'amount', 'Amount')}
     ${_finTh('reimb', 'category', 'Category', 'data-sort-field="expenseCategory"')}${_finTh('reimb', 'vendor', 'Vendor')}
     ${_finTh('reimb', 'description', 'Description')}${_finTh('reimb', 'paid_from', 'Paid From', 'data-sort-field="paidFrom"')}
-    ${_finTh('reimb', 'reimbursement_status', 'Status')}${_finTh('reimb', 'reimbursed_date', 'Reimbursed On')}<th>Action</th>
+    ${_finTh('reimb', 'reimbursement_status', 'Status')}${_finTh('reimb', 'reimbursed_date', 'Reimbursed On')}<th>Action</th><th>Del</th>
   </tr></thead><tbody>`;
   rows.forEach(e => {
     const isOwed = e.reimbursement_status === 'Owed';
@@ -923,10 +911,11 @@ function renderFinReimb() {
       <td>${isOwed
         ? `<button class="btn btn-sm btn-primary" onclick="markReimbursed(${e.id})">Mark reimbursed</button>`
         : `<button class="btn btn-sm" onclick="unmarkReimbursed(${e.id})">Undo</button>`}</td>
+      <td><button class="btn btn-danger btn-sm" onclick="deleteExpense(${e.id})">X</button></td>
     </tr>`;
   });
   if (!rows.length) {
-    html += `<tr><td colspan="9" style="text-align:center;padding:24px;color:var(--text-dim)">
+    html += `<tr><td colspan="10" style="text-align:center;padding:24px;color:var(--text-dim)">
       Nothing tracked yet. Add expenses with "Paid From" set to a Personal account (they auto-mark as Owed) —
       including the early Venture X charges and the lots paid from personal savings.</td></tr>`;
   }
@@ -1093,5 +1082,4 @@ async function _setReimb(id, status, date) {
     toast('Error saving — check console');
   }
   renderFinReimb();
-  updateReimbBadge();
 }
