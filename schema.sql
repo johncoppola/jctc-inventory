@@ -239,9 +239,26 @@ CREATE INDEX mileage_log_date_idx ON mileage_log (date DESC);
 INSERT INTO app_config (key, value) VALUES ('mileage_rate', '0.70')
   ON CONFLICT (key) DO NOTHING;
 
+-- 10. OWNER TRANSFERS (Finances > Owner Transfers) — equity movements between
+--     John and the LLC. Contributions (personal -> business funding) and
+--     Draws (business -> personal). Never part of the P&L.
+CREATE TABLE owner_transfers (
+  id           BIGSERIAL PRIMARY KEY,
+  date         DATE NOT NULL,
+  amount       NUMERIC(10,2) NOT NULL DEFAULT 0,
+  direction    TEXT NOT NULL DEFAULT 'Contribution' CHECK (direction IN ('Contribution','Draw')),
+  from_account TEXT NOT NULL DEFAULT '',
+  to_account   TEXT NOT NULL DEFAULT '',
+  purpose      TEXT NOT NULL DEFAULT '',
+  notes        TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX owner_transfers_date_idx ON owner_transfers (date DESC);
+
 -- =====================================================
 -- MIGRATION HISTORY (already applied — DO NOT re-run)
 -- =====================================================
+-- Migration 13 (owner_transfers): owner_transfers table per section 10 above,
+--   with full grants (incl. sequence) + RLS + permissive policy per the checklist.
 -- Migration 12 (finance_tab_expenses_recurring_mileage): expenses,
 --   recurring_expenses, mileage_log tables per section 9 above, with full
 --   grants (incl. sequences) + RLS + permissive policies per the checklist,

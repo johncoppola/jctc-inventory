@@ -3,7 +3,7 @@
 // monthly P&L that joins sales data (items/lots) with operating expenses.
 // Tables: expenses, recurring_expenses, mileage_log (+ app_config.mileage_rate).
 
-const FIN = { expenses: [], recurring: [], mileage: [], mileageRate: 0.70, loaded: false };
+const FIN = { expenses: [], recurring: [], mileage: [], transfers: [], mileageRate: 0.70, loaded: false };
 let _finTab = 'pl';
 let _finYear = new Date().getFullYear();
 
@@ -63,15 +63,17 @@ function _finMonthLabel(key) { // '2026-07' -> 'Jul 2026'
 // ===== DATA LOADING =====
 async function loadFinanceData() {
   try {
-    const [expenses, recurring, mileage, rateRows] = await Promise.all([
+    const [expenses, recurring, mileage, transfers, rateRows] = await Promise.all([
       supabase.select('expenses', 'order=date.desc,id.desc'),
       supabase.select('recurring_expenses', 'order=day_of_month.asc,id.asc'),
       supabase.select('mileage_log', 'order=date.desc,id.desc'),
+      supabase.select('owner_transfers', 'order=date.desc,id.desc'),
       supabase.select('app_config', 'key=eq.mileage_rate')
     ]);
     FIN.expenses = expenses;
     FIN.recurring = recurring;
     FIN.mileage = mileage;
+    FIN.transfers = transfers;
     FIN.mileageRate = rateRows.length ? (parseFloat(rateRows[0].value) || 0.70) : 0.70;
     FIN.loaded = true;
   } catch (err) {
@@ -100,6 +102,7 @@ function renderFinSubTab() {
   else if (_finTab === 'recurring') renderFinRecurring();
   else if (_finTab === 'mileage') renderFinMileage();
   else if (_finTab === 'reimb') renderFinReimb();
+  else if (_finTab === 'transfers') renderFinTransfers();
 }
 
 function setFinTab(t) { _finTab = t; renderFinSubTab(); }
@@ -114,6 +117,7 @@ function _updateFinYearSelect() {
   DATA.lots.forEach(l => { if (l.date) years.add(Number(l.date.slice(0, 4))); });
   FIN.expenses.forEach(e => { if (e.date) years.add(Number(e.date.slice(0, 4))); });
   FIN.mileage.forEach(m => { if (m.date) years.add(Number(m.date.slice(0, 4))); });
+  FIN.transfers.forEach(t => { if (t.date) years.add(Number(t.date.slice(0, 4))); });
   const list = [...years].filter(y => y > 2000).sort((a, b) => b - a);
   if (!list.includes(_finYear)) _finYear = list[0];
   sel.innerHTML = list.map(y => `<option value="${y}"${y === _finYear ? ' selected' : ''}>${y}</option>`).join('');
@@ -872,6 +876,140 @@ function renderFinReimb() {
     that keeps the paper trail clean for liability protection. Lot purchases fronted personally should be logged
     with category "Inventory / Lot Purchase" so they appear here without double-counting the P&amp;L.</p>`;
   document.getElementById('finContent').innerHTML = html;
+}
+
+// ===== OWNER TRANSFERS (contributions & draws) =====
+// Equity movements between John and the LLC — money he puts in to fund the
+// business (Contribution) or takes out for himself (Draw). Never in the P&L:
+// contributions aren't income and draws aren't expenses.
+function renderFinTransfers() {
+  const rows = FIN.transfers;
+  const contributed = rows.filter(t => t.direction === 'Contribution')
+    .reduce((s, t) => s + (Number(t.amount) || 0), 0);
+  const drawn = rows.filter(t => t.direction === 'Draw')
+    .reduce((s, t) => s + (Number(t.amount) || 0), 0);
+  const net = contributed - drawn;
+  const accounts = DROPDOWN_OPTIONS.paidFrom;
+
+  let html = `<div class="dashboard">
+    <div class="stat-card"><div class="label">Total Contributed</div><div class="value">${fmt(contributed)}</div><div class="sub">Personal money put into the business</div></div>
+    <div class="stat-card"><div class="label">Total Draws</div><div class="value">${fmt(drawn)}</div><div class="sub">Business money taken out for yourself</div></div>
+    <div class="stat-card"><div class="label">Net Invested</div><div class="value ${net > 0 ? 'negative' : 'positive'}">${fmt(net)}</div><div class="sub">${net > 0 ? 'The business still owes you this before you’re truly in the black' : 'The business has returned more than you put in'}</div></div>
+  </div>
+  <div class="toolbar">
+    <input type="date" id="trfDate" value="${_finToday()}">
+    <select id="trfDirection" onchange="_trfDirectionChanged()">
+      <option>Contribution</option><option>Draw</option>
+    </select>
+    <input type="text" id="trfAmount" inputmode="decimal" placeholder="Amount" style="width:100px">
+    <select id="trfFrom">${accounts.map(a => `<option value="${finEsc(a)}"${a === 'Personal — Savings' ? ' selected' : ''}>${finEsc(a) || 'From account…'}</option>`).join('')}</select>
+    <span class="fin-dim">→</span>
+    <select id="trfTo">${accounts.map(a => `<option value="${finEsc(a)}"${a === 'Relay Checking' ? ' selected' : ''}>${finEsc(a) || 'To account…'}</option>`).join('')}</select>
+    <input type="text" id="trfPurpose" placeholder="Purpose (fund lot purchase, cover storage rent...)" style="min-width:260px">
+    <button class="btn btn-primary" onclick="addTransfer()">+ Add Transfer</button>
+  </div>
+  <div class="table-wrap fin-tablewrap"><table class="fin-table"><thead><tr>
+    <th>Date</th><th>Type</th><th>Amount</th><th>From</th><th>To</th><th>Purpose</th><th>Notes</th><th>Del</th>
+  </tr></thead><tbody>`;
+  rows.forEach(t => {
+    html += `<tr>
+      <td><input type="date" value="${finEsc(t.date || '')}" onchange="updateTransfer(${t.id},'date',this.value)"></td>
+      <td><select onchange="updateTransfer(${t.id},'direction',this.value)">
+        <option${t.direction === 'Contribution' ? ' selected' : ''}>Contribution</option>
+        <option${t.direction === 'Draw' ? ' selected' : ''}>Draw</option>
+      </select></td>
+      <td class="money-cell">$<input type="text" inputmode="decimal" value="${t.amount || ''}" onchange="updateTransfer(${t.id},'amount',this.value)"></td>
+      <td>${_trfSelect(t.id, 'from_account', accounts, t.from_account)}</td>
+      <td>${_trfSelect(t.id, 'to_account', accounts, t.to_account)}</td>
+      <td><input type="text" value="${finEsc(t.purpose)}" onchange="updateTransfer(${t.id},'purpose',this.value)"></td>
+      <td><input type="text" value="${finEsc(t.notes)}" onchange="updateTransfer(${t.id},'notes',this.value)"></td>
+      <td><button class="btn btn-danger btn-sm" onclick="deleteTransfer(${t.id})">X</button></td>
+    </tr>`;
+  });
+  if (!rows.length) {
+    html += `<tr><td colspan="8" style="text-align:center;padding:24px;color:var(--text-dim)">
+      No transfers logged yet. Add each time you moved personal money into Relay to fund the business
+      (Contribution), or took business money out for yourself (Draw).</td></tr>`;
+  }
+  html += `</tbody></table></div>
+  <p class="fin-note">Shows all years. <strong>Contributions</strong> are your personal money funding the LLC —
+    not income, not in the P&amp;L. <strong>Draws</strong> are business money you take for yourself — not an
+    expense, and (heads up) not what you're taxed on: as a single-member LLC you're taxed on <em>profit</em>,
+    whether or not you take it out. Paying yourself back for a general cash infusion is a Draw here;
+    paying yourself back for a specific purchase you fronted belongs in Reimbursements instead.
+    Keep transfer memos in your bank ("owner contribution" / "owner draw") matching these entries.</p>`;
+  document.getElementById('finContent').innerHTML = html;
+}
+
+function _trfSelect(id, field, options, current) {
+  return `<select onchange="updateTransfer(${id},'${field}',this.value)">${options.map(o =>
+    `<option value="${finEsc(o)}"${o === (current || '') ? ' selected' : ''}>${finEsc(o)}</option>`).join('')}</select>`;
+}
+
+// Swap the from/to defaults when flipping Contribution <-> Draw in the quick-add bar
+function _trfDirectionChanged() {
+  const dir = document.getElementById('trfDirection').value;
+  document.getElementById('trfFrom').value = dir === 'Draw' ? 'Relay Checking' : 'Personal — Savings';
+  document.getElementById('trfTo').value = dir === 'Draw' ? 'Personal — Savings' : 'Relay Checking';
+}
+
+async function addTransfer() {
+  const date = document.getElementById('trfDate').value;
+  const amount = Number(document.getElementById('trfAmount').value) || 0;
+  if (!date || !amount) { alert('Date and amount are required.'); return; }
+  const row = {
+    date,
+    amount,
+    direction: document.getElementById('trfDirection').value,
+    from_account: document.getElementById('trfFrom').value,
+    to_account: document.getElementById('trfTo').value,
+    purpose: document.getElementById('trfPurpose').value.trim()
+  };
+  try {
+    const inserted = await supabase.insert('owner_transfers', row);
+    const saved = Array.isArray(inserted) ? inserted[0] : inserted;
+    if (saved && saved.id) FIN.transfers.unshift(saved);
+    _updateFinYearSelect();
+    renderFinTransfers();
+    toast(`${row.direction} logged — ${fmt(amount)}`);
+  } catch (err) {
+    console.error('addTransfer error:', err);
+    toast('Error logging transfer — check console');
+  }
+}
+
+function updateTransfer(id, field, value) {
+  const t = FIN.transfers.find(x => x.id === id);
+  if (!t) return;
+  if (field === 'amount') value = Number(value) || 0;
+  if (field === 'date' && !value) { renderFinTransfers(); return; }
+  t[field] = value;
+  const timerKey = `trf_${id}_${field}`;
+  clearTimeout(_updateTimers[timerKey]);
+  _updateTimers[timerKey] = setTimeout(async () => {
+    try {
+      await supabase.update('owner_transfers', `id=eq.${id}`, { [field]: value });
+    } catch (err) {
+      console.error(`updateTransfer(${id}, ${field}) error:`, err);
+      toast('Error saving — check console');
+    }
+  }, 300);
+  if (field === 'direction' || field === 'amount') renderFinTransfers();
+}
+
+async function deleteTransfer(id) {
+  const t = FIN.transfers.find(x => x.id === id);
+  if (!t) return;
+  if (!confirm(`Delete this ${(t.direction || 'transfer').toLowerCase()} (${fmt(t.amount)})? This cannot be undone.`)) return;
+  try {
+    await supabase.delete('owner_transfers', `id=eq.${id}`);
+    FIN.transfers = FIN.transfers.filter(x => x.id !== id);
+    renderFinTransfers();
+    toast('Transfer deleted');
+  } catch (err) {
+    console.error('deleteTransfer error:', err);
+    toast('Error deleting — check console');
+  }
 }
 
 async function markReimbursed(id) { await _setReimb(id, 'Reimbursed', _finToday()); }
