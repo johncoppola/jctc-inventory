@@ -5,7 +5,14 @@ let DATA = { lots: [], items: [], nextSKU: 1 };
 const ITEM_DB_TO_JS = {
   sku: 'sku', lot_id: 'lotId', bstock_item_code: 'bstockItemCode',
   category: 'category', brand: 'brand', model: 'model',
-  msrp: 'msrp', powers_on: 'powersOn', core_function: 'coreFunction',
+  msrp: 'msrp',
+  // RETIRED 2026-08-31. These four had no column and no editor — they were set once
+  // from the New Item modal and never seen again, so powers_on/core_function sat at
+  // the 'Not Tested (Sealed)' default on 93% of inventory and were actively
+  // misleading. Condition now lives in cosmetic_grade + functional_grade +
+  // listed_condition, which are real, editable columns. Still read here (and in
+  // Export JSON) so the existing values stay reachable; nothing writes them.
+  powers_on: 'powersOn', core_function: 'coreFunction',
   accessories: 'accessories', missing_items: 'missingItems',
   cosmetic_grade: 'cosmeticGrade', functional_grade: 'functionalGrade',
   listed_condition: 'listedCondition', listing_status: 'listingStatus',
@@ -478,9 +485,6 @@ function getAgingClass(item) {
 // Central store for all dropdown options — editable via right-click on column headers
 const DROPDOWN_OPTIONS = {
   category:        ['Electronics','Home & Kitchen','Tools','Toys','Clothing','Other'],
-  powersOn:        ['','Not Tested (Sealed)','Yes','No'],
-  coreFunction:    ['','Not Tested (Sealed)','Yes','No'],
-  accessories:     ['','Yes','No','Partial'],
   cosmeticGrade:   ['','A','B','C'],
   functionalGrade: ['','A (Sealed)','A','B','C'],
   listedCondition: ['','OB/LN','New - Open Box','Used - Like New','Used - Good','Used - Fair','Salvage/Parts'],
@@ -490,20 +494,18 @@ const DROPDOWN_OPTIONS = {
 };
 
 // Which dropdown fields are editable via right-click
-const EDITABLE_DROPDOWNS = ['category','powersOn','coreFunction','accessories','cosmeticGrade','functionalGrade','listedCondition','listingStatus','listingChannel','paymentMethod'];
+const EDITABLE_DROPDOWNS = ['category','cosmeticGrade','functionalGrade','listedCondition','listingStatus','listingChannel','paymentMethod'];
 
 // Friendly labels for the editor modal
 const DROPDOWN_LABELS = {
-  category: 'Category', powersOn: 'Powers On', coreFunction: 'Core Function',
-  accessories: 'Accessories', cosmeticGrade: 'Cosmetic Grade', functionalGrade: 'Functional Grade',
+  category: 'Category', cosmeticGrade: 'Cosmetic Grade', functionalGrade: 'Functional Grade',
   listedCondition: 'Listed Condition', listingStatus: 'Status',
   listingChannel: 'Listing Channel', paymentMethod: 'Payment Method'
 };
 
 // Map header field names to their dropdown key
 const HEADER_TO_DROPDOWN = {
-  category: 'category', powersOn: 'powersOn', coreFunction: 'coreFunction',
-  accessories: 'accessories', cosmeticGrade: 'cosmeticGrade', functionalGrade: 'functionalGrade',
+  category: 'category', cosmeticGrade: 'cosmeticGrade', functionalGrade: 'functionalGrade',
   listedCondition: 'listedCondition', listingStatus: 'listingStatus',
   listingChannel: 'listingChannel', paymentMethod: 'paymentMethod'
 };
@@ -656,12 +658,9 @@ function showItemModal() {
   if (!DATA.lots.length) { alert('Add a lot first before adding items.'); return; }
   const sel = document.getElementById('itemLot');
   sel.innerHTML = DATA.lots.map(l => `<option value="${l.id}">Lot ${l.id}</option>`).join('');
-  ['itemBstockCode','itemBrand','itemModel','itemMissing','itemNotes'].forEach(id => document.getElementById(id).value = '');
+  ['itemBstockCode','itemBrand','itemModel','itemNotes'].forEach(id => document.getElementById(id).value = '');
   document.getElementById('itemMSRP').value = '';
   populateModalSelect('itemCategory', DROPDOWN_OPTIONS.category, DROPDOWN_OPTIONS.category[0]);
-  populateModalSelect('itemPowers', DROPDOWN_OPTIONS.powersOn, 'Not Tested (Sealed)');
-  populateModalSelect('itemFunction', DROPDOWN_OPTIONS.coreFunction, 'Not Tested (Sealed)');
-  populateModalSelect('itemAccessories', DROPDOWN_OPTIONS.accessories, 'Yes');
   populateModalSelect('itemCosmetic', DROPDOWN_OPTIONS.cosmeticGrade, 'A');
   populateModalSelect('itemFunctional', DROPDOWN_OPTIONS.functionalGrade, 'A (Sealed)');
   document.getElementById('itemModal').classList.add('show');
@@ -680,10 +679,6 @@ async function saveItem() {
       brand: document.getElementById('itemBrand').value,
       model: document.getElementById('itemModel').value,
       msrp: Math.round(Number(document.getElementById('itemMSRP').value) || 0),
-      powersOn: document.getElementById('itemPowers').value,
-      coreFunction: document.getElementById('itemFunction').value,
-      accessories: document.getElementById('itemAccessories').value,
-      missingItems: document.getElementById('itemMissing').value,
       cosmeticGrade: document.getElementById('itemCosmetic').value,
       functionalGrade: document.getElementById('itemFunctional').value,
       listedCondition: '',
@@ -937,7 +932,7 @@ function makeInput(sku, field, value, type='text') {
   return `<input type="${type}" value="${v}" onchange="updateField(${sku},'${field}',this.value)">`;
 }
 
-function itemRow(item, showAllCols=true) {
+function itemRow(item) {
   const statusOpts = DROPDOWN_OPTIONS.listingStatus;
   const ageCls = getAgingClass(item);
   let html = `<tr data-sku="${item.sku}" class="${ageCls}">`;
@@ -949,10 +944,8 @@ function itemRow(item, showAllCols=true) {
   html += `<td>${makeInput(item.sku,'model',item.model)}</td>`;
   html += `<td>${makeSelect(item.sku,'category',DROPDOWN_OPTIONS.category,item.category)}</td>`;
   html += `<td class="calc-cell" data-field="unitCost">${fmt(item.unitCost)}</td>`;
-  if (showAllCols) {
-    html += `<td>${makeSelect(item.sku,'cosmeticGrade',DROPDOWN_OPTIONS.cosmeticGrade,item.cosmeticGrade)}</td>`;
-    html += `<td>${makeSelect(item.sku,'functionalGrade',DROPDOWN_OPTIONS.functionalGrade,item.functionalGrade)}</td>`;
-  }
+  html += `<td>${makeSelect(item.sku,'cosmeticGrade',DROPDOWN_OPTIONS.cosmeticGrade,item.cosmeticGrade)}</td>`;
+  html += `<td>${makeSelect(item.sku,'functionalGrade',DROPDOWN_OPTIONS.functionalGrade,item.functionalGrade)}</td>`;
   html += `<td>${makeSelect(item.sku,'listedCondition',conditionOptions(),item.listedCondition)}</td>`;
   html += `<td class="cell-with-history"><div class="cell-with-history-inner">${makeSelect(item.sku,'listingStatus',statusOpts,item.listingStatus)}<button class="history-icon" onclick="showStatusHistory(${item.sku},this)" title="Status history">&#9201;</button></div></td>`;
   // --- Flexible listings: Channel / List $ / Listed ---
@@ -985,7 +978,6 @@ function itemRow(item, showAllCols=true) {
   html += `<td>${makeSelect(item.sku,'paymentMethod',paymentOptions(),item.paymentMethod)}</td>`;
   html += `<td class="money-cell">$${makeInput(item.sku,'platformFees',item.platformFees ?? 0,'number')}</td>`;
   html += `<td class="money-cell">$${makeInput(item.sku,'shippingCost',item.shippingCost ?? 0,'number')}</td>`;
-  html += `<td class="money-cell">$${makeInput(item.sku,'otherCosts',item.otherCosts ?? 0,'number')}</td>`;
   html += `<td class="calc-cell" data-field="netProceeds">${fmt(item.netProceeds)}</td>`;
   html += `<td class="calc-cell ${item.grossProfit>=0?'positive':'negative'}" data-field="grossProfit">${fmt(item.grossProfit)}</td>`;
   html += `<td class="calc-cell ${item.roi>=0?'positive':'negative'}" data-field="roi">${fmtPct(item.roi)}</td>`;
@@ -1083,7 +1075,7 @@ function updateStaleBadges() {
 let currentSortField = null;
 let currentSortDir = 'asc';
 
-const HEADER_FIELD_MAP_ALL = [
+const HEADER_FIELD_MAP = [
   {label:'SKU',field:'sku'},{label:'Photos',field:'photoCount'},{label:'Lot',field:'lotId'},{label:'Item #',field:'bstockItemCode'},
   {label:'Brand',field:'brand'},{label:'Model',field:'model'},
   {label:'Category',field:'category'},{label:'Unit Cost',field:'unitCost'},
@@ -1091,22 +1083,18 @@ const HEADER_FIELD_MAP_ALL = [
   {label:'Condition',field:'listedCondition'},{label:'Status',field:'listingStatus'},
   {label:'Channel',field:'listingChannel'},{label:'List $',field:'listPrice'},{label:'Listed',field:'dateListed'},
   {label:'Sale $',field:'salePrice'},{label:'Sold On',field:'soldPlatform'},{label:'Sold',field:'dateSold'},{label:'Payment',field:'paymentMethod'},
-  {label:'Fees',field:'platformFees'},{label:'Shipping',field:'shippingCost'},{label:'Other $',field:'otherCosts'},
+  {label:'Fees',field:'platformFees'},{label:'Shipping',field:'shippingCost'},
   {label:'Net',field:'netProceeds'},{label:'Profit',field:'grossProfit'},{label:'ROI%',field:'roi'},
   {label:'MSRP',field:'msrp'},{label:'Notes',field:'notes'}
 ];
-const HEADER_FIELD_MAP_SHORT = HEADER_FIELD_MAP_ALL.filter(h =>
-  !['powersOn','coreFunction','accessories','missingItems','cosmeticGrade','functionalGrade'].includes(h.field)
-);
 
 // Default column widths (px) by field name
 const COL_DEFAULT_WIDTHS = {
   sku: 130, photoCount: 80, lotId: 80, bstockItemCode: 100, brand: 155, model: 200, category: 140, unitCost: 120,
-  powersOn: 120, coreFunction: 140, accessories: 130, missingItems: 155,
   cosmeticGrade: 125, functionalGrade: 140, listedCondition: 140,
   listingStatus: 110, listingChannel: 125, listPrice: 110, dateListed: 135,
   salePrice: 110, soldPlatform: 120, dateSold: 135, paymentMethod: 135, platformFees: 110,
-  shippingCost: 125, otherCosts: 110, netProceeds: 120, grossProfit: 120,
+  shippingCost: 125, netProceeds: 120, grossProfit: 120,
   roi: 95, msrp: 110, notes: 220
 };
 
@@ -1124,9 +1112,8 @@ function rth(col) {
   return `<th class="${sortedClass}" style="width:${defaultW}px" data-sort-field="${col.field}" onclick="if(!event.target.classList.contains('col-resize'))toggleSort('${col.field}')">${col.label}<span class="sort-arrow">${arrow}</span><span class="col-resize"></span></th>`;
 }
 
-function tableHeaders(showAllCols=true) {
-  const cols = showAllCols ? HEADER_FIELD_MAP_ALL : HEADER_FIELD_MAP_SHORT;
-  let h = '<tr>' + cols.map(rth).join('');
+function tableHeaders() {
+  let h = '<tr>' + HEADER_FIELD_MAP.map(rth).join('');
   h += '<th style="width:60px" title="Delete">Del</th></tr>';
   return h;
 }
@@ -1545,8 +1532,8 @@ function renderAll() {
   if (functional) items = items.filter(i => i.functionalGrade === functional);
   if (condition) items = items.filter(i => i.listedCondition === condition);
   items = sortItems(items);
-  let html = '<table>' + tableHeaders(true);
-  items.forEach(i => html += itemRow(i, true));
+  let html = '<table>' + tableHeaders();
+  items.forEach(i => html += itemRow(i));
   if (!items.length) html += '<tr><td colspan="31" style="text-align:center;padding:24px;color:var(--text-dim)">No items found</td></tr>';
   html += '</table>';
   document.getElementById('allTable').innerHTML = html;
@@ -1582,8 +1569,8 @@ function renderOpen() {
   }
 
   items = sortItems(items);
-  let html = '<table>' + tableHeaders(true);
-  items.forEach(i => html += itemRow(i, true));
+  let html = '<table>' + tableHeaders();
+  items.forEach(i => html += itemRow(i));
   if (!items.length) {
     const msg = _staleFilter !== 'all'
       ? 'No stale listings found — looking good!'
@@ -1607,8 +1594,8 @@ function renderSold() {
   } else {
     items.sort((a,b) => (b.dateSold||'').localeCompare(a.dateSold||''));
   }
-  let html = '<table>' + tableHeaders(true);
-  items.forEach(i => html += itemRow(i, true));
+  let html = '<table>' + tableHeaders();
+  items.forEach(i => html += itemRow(i));
   if (!items.length) html += '<tr><td colspan="31" style="text-align:center;padding:24px;color:var(--text-dim)">No sold items yet</td></tr>';
   html += '</table>';
   document.getElementById('soldTable').innerHTML = html;
@@ -1942,7 +1929,7 @@ function exportCSV() {
   DATA.items.forEach(i => calcItem(i));
   // Determine max listings across all items for dynamic columns
   const maxListings = Math.max(1, ...DATA.items.map(i => (i.listings || []).length));
-  const baseHeaders = ['SKU','Lot','Item #','Brand','Model','Category','Unit Cost','Powers On','Core Function','Accessories','Missing Items','Cosmetic Grade','Functional Grade','Listed Condition','Status'];
+  const baseHeaders = ['SKU','Lot','Item #','Brand','Model','Category','Unit Cost','Cosmetic Grade','Functional Grade','Listed Condition','Status'];
   const listingHeaders = [];
   for (let n = 1; n <= maxListings; n++) {
     const suffix = maxListings > 1 ? ` ${n}` : '';
@@ -1951,7 +1938,7 @@ function exportCSV() {
   const tailHeaders = ['Sale Price','Sold Platform','Date Sold','Payment Method','Platform Fees','Shipping Cost','Other Costs','Net Proceeds','Gross Profit','ROI%','MSRP','Notes'];
   const headers = [...baseHeaders, ...listingHeaders, ...tailHeaders];
   const rows = DATA.items.map(i => {
-    const base = [i.sku,i.lotId,i.bstockItemCode||'',i.brand,i.model,i.category,i.unitCost,i.powersOn,i.coreFunction,i.accessories,i.missingItems,
+    const base = [i.sku,i.lotId,i.bstockItemCode||'',i.brand,i.model,i.category,i.unitCost,
       i.cosmeticGrade,i.functionalGrade,i.listedCondition,statusLabel(i.listingStatus)];
     const listingCols = [];
     for (let n = 0; n < maxListings; n++) {
