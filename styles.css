@@ -350,6 +350,12 @@ td.photo-cell.has-photos .photo-btn { color: var(--accent); border-color: rgba(7
 .fin-reimb-status.is-done { background: rgba(52,211,153,.15); color: var(--green); }
 .fin-rate-wrap input { width: 70px; background: var(--surface2); border: 1px solid var(--border); color: var(--text); padding: 2px 6px; border-radius: 4px; font-size: 20px; font-weight: 700; }
 .fin-rate-wrap input:focus { border-color: var(--accent); outline: none; }
+.fin-rate-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: 13px; color: var(--text-dim); margin: 4px 0; }
+.fin-rate-row .fin-rate-wrap { font-size: 16px; color: var(--text); }
+.fin-rate-row .fin-rate-wrap input { width: 64px; font-size: 16px; }
+.fin-rate-add { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 8px; }
+.fin-rate-add input { background: var(--surface2); border: 1px solid var(--border); color: var(--text); padding: 2px 6px; border-radius: 4px; font-size: 12px; }
+.fin-rate-add input[type=text] { width: 60px; }
 .fin-checkbox-group label { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text); cursor: pointer; }
 #finYear { background: var(--surface); border: 1px solid var(--border); color: var(--text); padding: 8px 12px; border-radius: 6px; font-size: 13px; }
 

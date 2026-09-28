@@ -3,7 +3,7 @@
 // monthly P&L that joins sales data (items/lots) with operating expenses.
 // Tables: expenses, recurring_expenses, mileage_log (+ app_config.mileage_rate).
 
-const FIN = { expenses: [], recurring: [], mileage: [], transfers: [], mileageRate: 0.70, loaded: false };
+const FIN = { expenses: [], recurring: [], mileage: [], transfers: [], mileageRate: 0.70, mileageRates: [], loaded: false };
 let _finTab = 'pl';
 let _finYear = new Date().getFullYear();
 
@@ -118,13 +118,17 @@ async function loadFinanceData() {
       supabase.select('recurring_expenses', 'order=day_of_month.asc,id.asc'),
       supabase.select('mileage_log', 'order=date.desc,id.desc'),
       supabase.select('owner_transfers', 'order=date.desc,id.desc'),
-      supabase.select('app_config', 'key=eq.mileage_rate')
+      supabase.select('app_config', 'key=in.(mileage_rate,mileage_rates)')
     ]);
     FIN.expenses = expenses;
     FIN.recurring = recurring;
     FIN.mileage = mileage;
     FIN.transfers = transfers;
-    FIN.mileageRate = rateRows.length ? (parseFloat(rateRows[0].value) || 0.70) : 0.70;
+    const legacy = rateRows.find(r => r.key === 'mileage_rate');
+    FIN.mileageRate = legacy ? (parseFloat(legacy.value) || 0.70) : 0.70;
+    const sched = rateRows.find(r => r.key === 'mileage_rates');
+    try { FIN.mileageRates = sched ? JSON.parse(sched.value) : []; } catch (e) { FIN.mileageRates = []; }
+    FIN.mileageRates.sort((a, b) => a.from.localeCompare(b.from));
     FIN.loaded = true;
   } catch (err) {
     console.error('loadFinanceData failed:', err);
@@ -228,7 +232,8 @@ function renderFinPL() {
   const y = String(_finYear);
   const milesY = FIN.mileage.filter(m => (m.date || '').startsWith(y))
     .reduce((s, m) => s + (Number(m.miles) || 0), 0);
-  const mileageDed = milesY * FIN.mileageRate;
+  const mileageDed = FIN.mileage.filter(m => (m.date || '').startsWith(y))
+    .reduce((s, m) => s + (Number(m.miles) || 0) * mileageRateFor(m.date), 0);
 
   let html = `<div class="dashboard">
     <div class="stat-card"><div class="label">Net Profit (${_finYear})</div><div class="value ${tot.net >= 0 ? 'positive' : 'negative'}">${fmt(tot.net)}</div><div class="sub">Revenue − COGS − fees − expenses</div></div>
@@ -236,7 +241,7 @@ function renderFinPL() {
     <div class="stat-card"><div class="label">Revenue (${_finYear})</div><div class="value">${fmt(tot.rev)}</div><div class="sub">Items sold this year</div></div>
     <div class="stat-card"><div class="label">Operating Expenses</div><div class="value">${fmt(tot.opex)}</div><div class="sub">Non-COGS spending</div></div>
     <div class="stat-card"><div class="label">Suggested Tax Reserve</div><div class="value">${fmt(taxReserve)}</div><div class="sub">30% of net profit (if positive)</div></div>
-    <div class="stat-card"><div class="label">Mileage Deduction Est.</div><div class="value">${fmt(mileageDed)}</div><div class="sub">${milesY.toFixed(1)} mi × $${FIN.mileageRate.toFixed(2)}/mi — not in P&L</div></div>
+    <div class="stat-card"><div class="label">Mileage Deduction Est.</div><div class="value">${fmt(mileageDed)}</div><div class="sub">${milesY.toFixed(1)} mi at the IRS rate for each trip's date — not in P&L</div></div>
   </div>`;
 
   html += `<div class="chart-card" style="margin-bottom:12px">
@@ -771,12 +776,15 @@ function renderFinMileage() {
   const y = String(_finYear);
   const rows = FIN.mileage.filter(m => (m.date || '').startsWith(y));
   const totalMiles = rows.reduce((s, m) => s + (Number(m.miles) || 0), 0);
+  const totalDed = rows.reduce((s, m) => s + (Number(m.miles) || 0) * mileageRateFor(m.date), 0);
+  const periods = _mileagePeriodsForYear(_finYear);
   let html = `<div class="dashboard">
     <div class="stat-card"><div class="label">Miles Logged (${_finYear})</div><div class="value">${totalMiles.toFixed(1)}</div><div class="sub">${rows.length} trip${rows.length === 1 ? '' : 's'}</div></div>
-    <div class="stat-card"><div class="label">Deduction Estimate</div><div class="value positive">${fmt(totalMiles * FIN.mileageRate)}</div><div class="sub">At $${FIN.mileageRate.toFixed(2)}/mile</div></div>
-    <div class="stat-card"><div class="label">IRS Rate ($/mile)</div>
-      <div class="value fin-rate-wrap">$<input type="text" inputmode="decimal" id="mileageRateInput" value="${FIN.mileageRate.toFixed(2)}" onchange="saveMileageRate(this.value)"></div>
-      <div class="sub">2025 rate was $0.70 — confirm the current-year rate with the CPA</div></div>
+    <div class="stat-card"><div class="label">Deduction Estimate</div><div class="value positive">${fmt(totalDed)}</div><div class="sub">Each trip at the IRS rate for its date</div></div>
+    <div class="stat-card"><div class="label">IRS Rates (${_finYear})</div>
+      ${periods.map(p => `<div class="fin-rate-row"><span>${p.label}</span><span class="fin-rate-wrap">$<input type="text" inputmode="decimal" value="${fmtMileageRate(p.rate)}" onchange="saveMileageRate('${p.from}', this.value)"></span></div>`).join('')}
+      <div class="fin-rate-add"><input type="date" id="milRateFrom" title="Rate effective from"><input type="text" inputmode="decimal" id="milRateVal" placeholder="0.00"><button class="btn btn-sm" onclick="addMileageRate()">+ Rate change</button></div>
+      <div class="sub">IRS can change the rate mid-year — add the new rate from its effective date</div></div>
   </div>
   <div class="toolbar">
     <input type="date" id="milDate" value="${_finToday()}">
@@ -793,7 +801,7 @@ function renderFinMileage() {
       <td><input type="date" value="${finEsc(m.date || '')}" onchange="updateMileage(${m.id},'date',this.value)"></td>
       <td><input type="text" value="${finEsc(m.purpose)}" onchange="updateMileage(${m.id},'purpose',this.value)"></td>
       <td><input type="text" inputmode="decimal" value="${m.miles || ''}" onchange="updateMileage(${m.id},'miles',this.value)"></td>
-      <td class="fin-dim">${fmt((Number(m.miles) || 0) * FIN.mileageRate)}</td>
+      <td class="fin-dim" title="$${fmtMileageRate(mileageRateFor(m.date))}/mi">${fmt((Number(m.miles) || 0) * mileageRateFor(m.date))}</td>
       <td><input type="text" value="${finEsc(m.notes)}" onchange="updateMileage(${m.id},'notes',this.value)"></td>
       <td><button class="btn btn-danger btn-sm" onclick="deleteMileage(${m.id})">X</button></td>
     </tr>`;
@@ -858,23 +866,58 @@ async function deleteMileage(id) {
   }
 }
 
-async function saveMileageRate(value) {
+// Rate schedule: app_config.mileage_rates = JSON [{from:'YYYY-MM-DD', rate}], each rate
+// applying from its date until the next one. Falls back to the legacy single mileage_rate.
+function mileageRateFor(date) {
+  let rate = FIN.mileageRate;
+  for (const r of FIN.mileageRates) { if (date && r.from <= date) rate = Number(r.rate); }
+  return rate;
+}
+
+function fmtMileageRate(r) {
+  return Math.round(r * 1000) % 10 ? Number(r).toFixed(3) : Number(r).toFixed(2);
+}
+
+function _mileagePeriodsForYear(year) {
+  const y = String(year);
+  const starts = FIN.mileageRates.filter(r => r.from.startsWith(y)).map(r => r.from);
+  if (!starts.includes(`${y}-01-01`)) starts.unshift(`${y}-01-01`);
+  const md = d => new Date(d + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  return starts.map((from, i) => {
+    const next = starts[i + 1];
+    const end = next ? new Date(new Date(next + 'T12:00:00').getTime() - 864e5).toISOString().slice(0, 10) : `${y}-12-31`;
+    return { from, rate: mileageRateFor(from), label: `${md(from)} – ${md(end)}` };
+  });
+}
+
+async function _saveMileageRates() {
+  const value = JSON.stringify(FIN.mileageRates);
+  const rows = await supabase.select('app_config', 'key=eq.mileage_rates');
+  if (rows.length) await supabase.update('app_config', 'key=eq.mileage_rates', { value });
+  else await supabase.insert('app_config', { key: 'mileage_rates', value });
+}
+
+async function saveMileageRate(from, value) {
   const rate = parseFloat(value);
-  if (!isFinite(rate) || rate <= 0 || rate > 5) { toast('Enter a valid rate, e.g. 0.70'); renderFinMileage(); return; }
-  FIN.mileageRate = rate;
+  if (!isFinite(rate) || rate <= 0 || rate > 5) { toast('Enter a valid rate, e.g. 0.725'); renderFinMileage(); return; }
+  const existing = FIN.mileageRates.find(r => r.from === from);
+  if (existing) existing.rate = rate; else FIN.mileageRates.push({ from, rate });
+  FIN.mileageRates.sort((a, b) => a.from.localeCompare(b.from));
   try {
-    const rows = await supabase.select('app_config', 'key=eq.mileage_rate');
-    if (rows.length) {
-      await supabase.update('app_config', 'key=eq.mileage_rate', { value: String(rate) });
-    } else {
-      await supabase.insert('app_config', { key: 'mileage_rate', value: String(rate) });
-    }
-    toast(`Mileage rate set to $${rate.toFixed(2)}/mi`);
+    await _saveMileageRates();
+    renderFinMileage();
+    toast(`Mileage rate from ${from} set to $${fmtMileageRate(rate)}/mi`);
   } catch (err) {
     console.error('saveMileageRate error:', err);
     toast('Error saving rate — check console');
   }
-  renderFinMileage();
+}
+
+function addMileageRate() {
+  const from = document.getElementById('milRateFrom').value;
+  const value = document.getElementById('milRateVal').value;
+  if (!from || !value) { toast('Enter the effective date and the rate'); return; }
+  saveMileageRate(from, value);
 }
 
 // ===== REIMBURSEMENTS =====
