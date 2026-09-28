@@ -3,8 +3,12 @@
 // monthly P&L that joins sales data (items/lots) with operating expenses.
 // Tables: expenses, recurring_expenses, mileage_log (+ app_config.mileage_rate).
 
-const FIN = { expenses: [], recurring: [], mileage: [], transfers: [], mileageRate: 0.70, mileageRates: [], loaded: false };
-let _finTab = 'pl';
+const FIN = { expenses: [], recurring: [], mileage: [], transfers: [], mileageRate: 0.70, mileageRates: [], loaded: false,
+  // Cash tab (moved from the Money Board artifact 2026-09-27). Stored in app_config:
+  // account_balances = { accounts: [{name, group, kind, balance, note, reserve, reserveAmount}], updatedAt }
+  // cash_plan = { overheadMonths, lotCap }
+  balances: null, cashPlan: { overheadMonths: 3, lotCap: 1500 } };
+let _finTab = 'cash';
 let _finYear = new Date().getFullYear();
 
 // Expense-tab filters
@@ -118,7 +122,7 @@ async function loadFinanceData() {
       supabase.select('recurring_expenses', 'order=day_of_month.asc,id.asc'),
       supabase.select('mileage_log', 'order=date.desc,id.desc'),
       supabase.select('owner_transfers', 'order=date.desc,id.desc'),
-      supabase.select('app_config', 'key=in.(mileage_rate,mileage_rates)')
+      supabase.select('app_config', 'key=in.(mileage_rate,mileage_rates,account_balances,cash_plan)')
     ]);
     FIN.expenses = expenses;
     FIN.recurring = recurring;
@@ -129,6 +133,10 @@ async function loadFinanceData() {
     const sched = rateRows.find(r => r.key === 'mileage_rates');
     try { FIN.mileageRates = sched ? JSON.parse(sched.value) : []; } catch (e) { FIN.mileageRates = []; }
     FIN.mileageRates.sort((a, b) => a.from.localeCompare(b.from));
+    const bal = rateRows.find(r => r.key === 'account_balances');
+    try { FIN.balances = bal ? JSON.parse(bal.value) : null; } catch (e) { FIN.balances = null; }
+    const plan = rateRows.find(r => r.key === 'cash_plan');
+    try { if (plan) FIN.cashPlan = { ...FIN.cashPlan, ...JSON.parse(plan.value) }; } catch (e) { /* keep defaults */ }
     FIN.loaded = true;
   } catch (err) {
     console.error('loadFinanceData failed:', err);
@@ -143,6 +151,7 @@ async function renderFinances() {
     if (c) c.innerHTML = '<div class="fin-loading">Loading finances…</div>';
   }
   await loadFinanceData(); // cheap — keeps Monarch/agent-inserted rows fresh
+  if (!_todosLoaded) await loadTodos(); // Cash tab holds back money for dated to-dos
   _updateFinYearSelect();
   renderFinSubTab();
 }
@@ -150,7 +159,8 @@ async function renderFinances() {
 function renderFinSubTab() {
   document.querySelectorAll('.fin-subtab').forEach(b =>
     b.classList.toggle('active', b.dataset.fin === _finTab));
-  if (_finTab === 'pl') renderFinPL();
+  if (_finTab === 'cash') renderFinCash();
+  else if (_finTab === 'pl') renderFinPL();
   else if (_finTab === 'expenses') renderFinExpenses();
   else if (_finTab === 'recurring') renderFinRecurring();
   else if (_finTab === 'mileage') renderFinMileage();
@@ -968,6 +978,156 @@ function renderFinReimb() {
     that keeps the paper trail clean for liability protection. Lot purchases fronted personally should be logged
     with category "Inventory / Lot Purchase" so they appear here without double-counting the P&amp;L.</p>`;
   document.getElementById('finContent').innerHTML = html;
+}
+
+// ===== CASH (balances, what you can spend, books vs. tracker) =====
+// Moved here from the Money Board artifact so money lives in one place.
+// Balances are typed in (or synced) — the tracker can't see bank accounts.
+
+// fmt() prints negatives as "$-12.00"; money on this tab reads "−$12.00".
+function _fmtCash(n) { return (n < 0 ? '−' : '') + fmt(Math.abs(n)); }
+
+function _cashTotals() {
+  const a = (FIN.balances && FIN.balances.accounts) || [];
+  const assets = a.filter(x => x.kind !== 'liability').reduce((s, x) => s + (Number(x.balance) || 0), 0);
+  const liab = a.filter(x => x.kind === 'liability').reduce((s, x) => s + (Number(x.balance) || 0), 0);
+  return { assets, liab, cash: assets - liab };
+}
+
+// Money you have minus everything already spoken for. Expected one-off
+// charges are open to-dos with a negative amount (the old watch list).
+function _cashWaterfall() {
+  const t = _cashTotals();
+  const monthly = FIN.recurring.filter(r => r.active).reduce((s, r) => s + (Number(r.amount) || 0), 0);
+  const months = Number(FIN.cashPlan.overheadMonths) || 0;
+  const steps = [
+    { label: 'Everything in accounts', amt: t.assets, kind: 'base' },
+    { label: 'Card balances owed', amt: -t.liab, kind: 'due' },
+    { label: `Next ${months} months of fixed bills (${fmt(monthly)}/mo)`, amt: -monthly * months, kind: 'due' }
+  ];
+  _todos.filter(x => !x.done && Number(x.amount) < 0)
+    .forEach(x => steps.push({ label: x.text + ' (to-do)', amt: Number(x.amount), kind: 'due' }));
+  ((FIN.balances && FIN.balances.accounts) || []).filter(x => x.reserve)
+    .forEach(x => steps.push({ label: `${x.name} (kept)`, amt: -Number(x.reserveAmount ?? x.balance), kind: 'hold' }));
+  return { steps, avail: steps.reduce((s, x) => s + x.amt, 0), monthly };
+}
+
+function renderFinCash() {
+  const t = _cashTotals();
+  const W = _cashWaterfall();
+  const year = new Date().getFullYear();
+  const glance = buildMonthlyGlance();
+  const ytd = Object.entries(glance).filter(([k]) => k.startsWith(String(year))).reduce((s, [, m]) => s + m.after, 0);
+  const hasBal = !!(FIN.balances && FIN.balances.accounts && FIN.balances.accounts.length);
+  const cap = Number(FIN.cashPlan.lotCap) || 0;
+
+  let html = `<div class="glance-tiles">
+    <div class="stat-card"><div class="label">Cash position</div><div class="value ${t.cash >= 0 ? '' : 'negative'}">${hasBal ? fmt0(t.cash) : '—'}</div>
+      <div class="sub">${hasBal ? `${fmt0(t.assets)} in accounts − ${fmt0(t.liab)} on cards` : 'Add balances below'}</div></div>
+    <div class="stat-card cash-hero"><div class="label">Available for next lot</div><div class="value ${W.avail >= 0 ? 'positive' : 'negative'}">${hasBal ? fmt0(W.avail) : '—'}</div>
+      <div class="sub">after bills, cards &amp; reserves</div></div>
+    <div class="stat-card"><div class="label">Fixed bills</div><div class="value">${fmt0(W.monthly)}/mo</div>
+      <div class="sub">${fmt0(W.monthly * 12)} a year before any sales</div></div>
+    <div class="stat-card"><div class="label">${year} to date</div><div class="value ${ytd >= 0 ? 'positive' : 'negative'}">${fmt0(ytd)}</div>
+      <div class="sub">${ytd < 0 ? 'No tax set-aside needed' : `Set aside ${fmt0(ytd * 0.3)} (30%)`}</div></div>
+  </div>`;
+
+  // Balances (editable)
+  const groups = [];
+  ((FIN.balances && FIN.balances.accounts) || []).forEach((a, i) => {
+    let g = groups.find(x => x.name === a.group);
+    if (!g) { g = { name: a.group, items: [] }; groups.push(g); }
+    g.items.push([a, i]);
+  });
+  const tag = a => !a.reserve ? '' : `<span class="cash-rsv">${a.reserveAmount != null ? 'KEEP ' + fmt0(a.reserveAmount) : 'KEPT'}</span>`;
+  let balHtml = groups.map(g => `<div class="cash-grp">${finEsc(g.name)}</div>` + g.items.map(([a, i]) => `
+      <div class="cash-acct${a.kind === 'liability' ? ' liab' : ''}">
+        <label class="nm" for="bal${i}">${finEsc(a.name)}${tag(a)}${a.note ? `<small>${finEsc(a.note)}</small>` : ''}</label>
+        <input id="bal${i}" data-i="${i}" inputmode="decimal" value="${(Number(a.balance) || 0).toFixed(2)}" oninput="_balDirty()">
+      </div>`).join('')).join('');
+  if (!hasBal) balHtml = '<p class="fin-note">No balances saved yet.</p>';
+  const updated = FIN.balances && FIN.balances.updatedAt
+    ? new Date(FIN.balances.updatedAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '';
+
+  // Waterfall
+  const max = W.steps[0].amt || 1;
+  const col = { base: 'var(--accent)', due: 'var(--red)', hold: 'var(--yellow)' };
+  const wfHtml = W.steps.map(x => `<div class="cash-wf-row"><span class="lab">${finEsc(x.label)}
+      <span class="cash-wf-track"><i style="width:${Math.min(100, Math.abs(x.amt) / max * 100).toFixed(1)}%;background:${col[x.kind]}"></i></span></span>
+      <span class="amt ${x.kind === 'due' ? 'negative' : x.kind === 'hold' ? 'cash-warn' : ''}">${_fmtCash(x.amt)}</span></div>`).join('')
+    + `<div class="cash-wf-row total"><span>Available for the next lot</span><span class="amt ${W.avail >= 0 ? 'positive' : 'negative'}">${_fmtCash(W.avail)}</span></div>`;
+
+  html += `<div class="cash-two">
+    <div class="chart-card">
+      <div class="glance-card-head"><h3 class="chart-title">Account balances</h3><span class="chart-subtitle">click any amount to edit</span></div>
+      <div id="cashAccts">${balHtml}</div>
+      ${hasBal ? `<div class="cash-total"><span>Cash position</span><span>${_fmtCash(t.cash)}</span></div>` : ''}
+      <div class="cash-actions"><button class="btn btn-primary" id="saveBalBtn" onclick="saveBalances()" disabled>Save balances</button>
+        <span id="balMsg">${updated ? 'Updated ' + updated : ''}</span></div>
+    </div>
+    <div class="chart-card">
+      <div class="glance-card-head"><h3 class="chart-title">What you can spend on the next lot</h3></div>
+      <div class="cash-wf">${hasBal ? wfHtml : '<p class="fin-note">Needs balances.</p>'}</div>
+      ${hasBal && cap ? `<div class="cash-cap"><span>Buy-box cap (bid + freight)</span><b>${fmt(cap)}</b>
+        <span class="fin-dim">Left over if you spend the full cap</span><b class="${W.avail - cap >= 0 ? 'positive' : 'negative'}">${_fmtCash(W.avail - cap)}</b></div>` : ''}
+      <p class="fin-note">Fixed bills come from the Recurring tab. One-off charges come from open dashboard to-dos with a negative amount.</p>
+    </div>
+  </div>`;
+
+  // Books vs. tracker
+  if (hasBal) {
+    DATA.items.forEach(i => calcItem(i));
+    const sold = DATA.items.filter(isSold);
+    const rev = sold.reduce((s, i) => s + (Number(i.salePrice) || 0), 0);
+    const sell = sold.reduce((s, i) => s + (Number(i.platformFees) || 0) + (Number(i.shippingCost) || 0) + (Number(i.otherCosts) || 0), 0);
+    const overhead = FIN.expenses.filter(e => e.in_pl).reduce((s, e) => s + (Number(e.amount) || 0), 0);
+    const lotCost = DATA.lots.reduce((s, l) => s + (Number(l.totalCost) || 0), 0);
+    const contrib = FIN.transfers.filter(x => x.direction === 'Contribution').reduce((s, x) => s + (Number(x.amount) || 0), 0);
+    const draws = FIN.transfers.filter(x => x.direction !== 'Contribution').reduce((s, x) => s + (Number(x.amount) || 0), 0);
+    const expected = contrib - draws + rev - sell - overhead - lotCost;
+    const diff = t.cash - expected;
+    const ok = Math.abs(diff) <= 100;
+    html += `<div class="chart-card" style="margin-top:12px">
+      <div class="glance-card-head"><h3 class="chart-title">Books vs. tracker</h3><span class="chart-subtitle">does the money add up?</span></div>
+      <div class="cash-recon">
+        <div><div class="label">Tracker says you should have</div><div class="value">${_fmtCash(expected)}</div>
+          <div class="fin-dim">put in ${fmt0(contrib - draws)} + sales − fees − overhead − lot costs</div></div>
+        <div><div class="label">Your balances add up to</div><div class="value">${_fmtCash(t.cash)}</div></div>
+        <div><div class="label">Difference</div><div class="value">${diff >= 0 ? '+' : ''}${_fmtCash(diff)}</div></div>
+        <div><span class="cash-pill ${ok ? 'ok' : 'bad'}">${ok ? 'Reconciled' : 'Look into this'}</span>
+          <div class="fin-dim">${ok ? 'Within $100' : 'Over $100 apart: check for an unlogged sale, expense, or business money spent personally'}</div></div>
+      </div>
+    </div>`;
+  }
+  document.getElementById('finContent').innerHTML = html;
+}
+
+function _balDirty() {
+  document.getElementById('saveBalBtn').disabled = false;
+  document.getElementById('balMsg').textContent = 'Unsaved changes';
+}
+
+async function saveBalances() {
+  const next = JSON.parse(JSON.stringify(FIN.balances));
+  let bad = false;
+  document.querySelectorAll('#cashAccts input').forEach(inp => {
+    const v = parseFloat(inp.value.replace(/[$,\s]/g, ''));
+    if (isNaN(v)) { bad = true; inp.classList.add('cash-bad'); }
+    else { inp.classList.remove('cash-bad'); next.accounts[+inp.dataset.i].balance = Math.round(v * 100) / 100; }
+  });
+  if (bad) { document.getElementById('balMsg').textContent = 'Numbers only, like 1250.00'; return; }
+  next.updatedAt = new Date().toISOString();
+  document.getElementById('saveBalBtn').disabled = true;
+  try {
+    await supabase.update('app_config', 'key=eq.account_balances', { value: JSON.stringify(next) });
+    FIN.balances = next;
+    toast('Balances saved');
+    renderFinCash();
+  } catch (err) {
+    console.error('saveBalances failed:', err);
+    document.getElementById('saveBalBtn').disabled = false;
+    toast('Error saving balances — check console');
+  }
 }
 
 // ===== OWNER TRANSFERS (contributions & draws) =====

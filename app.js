@@ -1225,6 +1225,7 @@ function fmt0(n) {
   const v = Math.round(Number(n) || 0);
   return (v < 0 ? '−' : '') + '$' + Math.abs(v).toLocaleString('en-US');
 }
+function escapeHtmlLite(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
 function fmtSigned0(n) { return (n >= 0 ? '+' : '') + fmt0(n); }
 function _monthKey(d) { return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'); }
 
@@ -1375,10 +1376,15 @@ function renderTodoList(open) {
 
   let html = auto.map(t => `<div class="todo-row todo-auto" onclick="${t.go}" title="Open these items">
       <span class="todo-dot">→</span><span class="todo-text">${t.text}</span><b class="todo-n ${t.tone}">${t.n}</b></div>`).join('');
-  html += _todos.map(t => `<label class="todo-row${t.done ? ' done' : ''}">
+  html += _sortedTodos().map(t => {
+    const amt = Number(t.amount);
+    const when = _todoWhen(t.date);
+    return `<label class="todo-row${t.done ? ' done' : ''}">
       <input type="checkbox" ${t.done ? 'checked' : ''} onchange="toggleTodo('${t.id}')">
-      <span class="todo-text">${finEsc(t.text)}</span>
-      <button type="button" class="todo-del" onclick="event.preventDefault();deleteTodo('${t.id}')" title="Remove">×</button></label>`).join('');
+      <span class="todo-text">${finEsc(t.text)}${t.detail ? `<small>${finEsc(t.detail)}</small>` : ''}</span>
+      <span class="todo-meta">${when ? `<span class="todo-when${when.soon ? ' soon' : ''}">${when.label}</span>` : ''}${amt ? `<b class="${amt > 0 ? 'positive' : 'negative'}">${amt > 0 ? '+' : '−'}${fmt(Math.abs(amt))}</b>` : ''}
+        <button type="button" class="todo-del" onclick="event.preventDefault();deleteTodo('${t.id}')" title="Remove">×</button></span></label>`;
+  }).join('');
   if (!html) html = '<div class="todo-empty">Nothing waiting. Nice.</div>';
   document.getElementById('todoList').innerHTML = html;
   const openCount = auto.length + _todos.filter(t => !t.done).length;
@@ -1408,13 +1414,37 @@ async function saveTodos() {
   }
 }
 
+// Open first; within that, dated items by date, then undated by when added.
+function _sortedTodos() {
+  return [..._todos].sort((a, b) =>
+    (a.done - b.done) || String(a.date || '9999').localeCompare(String(b.date || '9999'))
+    || String(a.createdAt || '').localeCompare(String(b.createdAt || '')));
+}
+
+function _todoWhen(date) {
+  if (!date) return null;
+  const d = new Date(date + 'T12:00:00');
+  const today = new Date(); today.setHours(12, 0, 0, 0);
+  const days = Math.round((d - today) / 86400000);
+  if (days < 0) return { label: 'Overdue', soon: true };
+  if (days === 0) return { label: 'Today', soon: true };
+  if (days === 1) return { label: 'Tomorrow', soon: true };
+  return { label: d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }), soon: false };
+}
+
 function addTodo(e) {
   e.preventDefault();
   const input = document.getElementById('newTodo');
+  const dateIn = document.getElementById('newTodoDate');
+  const amtIn = document.getElementById('newTodoAmt');
   const text = input.value.trim();
   if (!text) return;
-  _todos.push({ id: Date.now().toString(36), text, done: false, createdAt: new Date().toISOString() });
-  input.value = '';
+  const amount = parseFloat((amtIn.value || '').replace(/[$,\s]/g, ''));
+  const todo = { id: Date.now().toString(36), text, done: false, createdAt: new Date().toISOString() };
+  if (dateIn.value) todo.date = dateIn.value;
+  if (!isNaN(amount) && amount !== 0) todo.amount = Math.round(amount * 100) / 100;
+  _todos.push(todo);
+  input.value = ''; dateIn.value = ''; amtIn.value = '';
   renderTodoList(DATA.items.filter(isOpen));
   saveTodos();
 }
@@ -1543,7 +1573,98 @@ function renderSold() {
   applyColumnWidths('soldTable');
 }
 
+// ===== LOT SCORECARD =====
+// Moved from the Money Board. Return = (sales − fees & shipping) ÷ all-in cost.
+function _lotShortName(notes) {
+  let n = String(notes || '').replace(/^BStock\s*-\s*/i, '');
+  const src = (n.match(/^([^:]+):/) || [])[1] || '';
+  const m = n.match(/Pallets? of (.*)/i);
+  n = m ? m[1].split(/,| & /)[0].trim() : n;
+  return { name: n, source: src.trim() };
+}
+
+function lotScores() {
+  DATA.items.forEach(i => calcItem(i));
+  return DATA.lots.map(lot => {
+    const items = DATA.items.filter(i => i.lotId == lot.id);
+    const sold = items.filter(isSold);
+    const rev = sold.reduce((s, i) => s + (Number(i.salePrice) || 0), 0);
+    const sell = sold.reduce((s, i) => s + (Number(i.platformFees) || 0) + (Number(i.shippingCost) || 0) + (Number(i.otherCosts) || 0), 0);
+    const cost = Number(lot.totalCost) || 0;
+    const units = Number(lot.totalUnits) || items.length;
+    const open = Math.max(0, units - sold.length);
+    const lastSale = sold.map(i => i.dateSold).filter(Boolean).sort().pop();
+    const daysSince = d => lot.date && d ? Math.round((new Date(d) - new Date(lot.date)) / 86400000) : null;
+    return {
+      lot, units, soldN: sold.length, open, rev, cost,
+      profit: rev - sell - cost * (units ? sold.length / units : 0),
+      mult: cost ? (rev - sell) / cost : 0,
+      freight: cost ? (Number(lot.shippingFees) || 0) / cost : 0,
+      freightOverBid: (Number(lot.shippingFees) || 0) > (Number(lot.auctionPrice) || 0),
+      avgSale: sold.length ? rev / sold.length : 0,
+      days: open ? daysSince(new Date().toISOString().slice(0, 10)) : daysSince(lastSale),
+      ..._lotShortName(lot.notes)
+    };
+  }).sort((x, y) => (y.open > 0) - (x.open > 0) || y.mult - x.mult);
+}
+
+function _lotVerdict(r) {
+  if (r.open > 0) return `<span class="lot-pill b">${r.open} unsold</span>`;
+  if (r.mult >= 1.5) return '<span class="lot-pill g">Repeat this</span>';
+  if (r.mult >= 1) return r.units >= 100 ? '<span class="lot-pill y">Too many units</span>' : '<span class="lot-pill y">Thin</span>';
+  return '<span class="lot-pill r">Lost money</span>';
+}
+
+// Plain-language takeaways, only the ones the data supports.
+function _lotLessons(rows) {
+  const done = rows.filter(r => !r.open && r.soldN);
+  const lessons = [];
+  const totProfit = done.reduce((s, r) => s + r.profit, 0);
+  const totUnits = done.reduce((s, r) => s + r.units, 0);
+  const best = [...done].sort((a, b) => b.profit - a.profit)[0];
+  if (best && best.profit > 0 && totProfit > 0 && done.length > 1) {
+    lessons.push([`Lot ${best.lot.id} made ${Math.round(best.profit / totProfit * 100)}% of all lot profit`,
+      `with ${Math.round(best.units / totUnits * 100)}% of the units. ${fmt0(best.avgSale)} average sale, cleared in ${best.days} days. This is the profile to buy again.`]);
+  }
+  const heavy = [...rows].sort((a, b) => b.freight - a.freight)[0];
+  if (heavy && heavy.freight >= 0.3) {
+    lessons.push([heavy.freightOverBid ? `Lot ${heavy.lot.id}'s freight cost more than the bid` : `Lot ${heavy.lot.id} was ${Math.round(heavy.freight * 100)}% freight`,
+      `${fmt0(heavy.lot.shippingFees)} shipping on a ${fmt0(heavy.lot.auctionPrice)} bid, so ${Math.round(heavy.freight * 100)}% of the cost was freight before a single sale.`]);
+  }
+  const busy = done.filter(r => r.units >= 60 && r.avgSale < 30).sort((a, b) => b.units - a.units)[0];
+  if (busy) {
+    lessons.push([`Lot ${busy.lot.id} ${busy.profit > 0 ? 'made money but ate your time' : 'cost time and money'}`,
+      `${busy.units} units at ${fmt0(busy.avgSale)} each is ${busy.units} test, photo and list cycles for ${fmtSigned0(busy.profit)}.`]);
+  }
+  return lessons;
+}
+
 function renderLots() {
+  const rows = lotScores();
+  let score = '';
+  if (rows.length) {
+    const tot = rows.reduce((a, r) => ({ units: a.units + r.units, cost: a.cost + r.cost, soldN: a.soldN + r.soldN, rev: a.rev + r.rev,
+      net: a.net + r.mult * r.cost, profit: a.profit + r.profit, freight: a.freight + (Number(r.lot.shippingFees) || 0) }),
+      { units: 0, cost: 0, soldN: 0, rev: 0, net: 0, profit: 0, freight: 0 });
+    const retCell = r => `<div class="lot-ret"><b class="${r.open ? '' : r.mult >= 1.5 ? 'positive' : r.mult >= 1 ? 'lot-warn' : 'negative'}">${r.mult.toFixed(2)}×${r.open ? ' so far' : ''}</b>
+      <span class="lot-ret-t"><i style="width:${Math.min(100, r.mult / 2 * 100).toFixed(0)}%;background:${r.open ? 'var(--accent)' : r.mult >= 1.5 ? 'var(--green)' : r.mult >= 1 ? 'var(--yellow)' : 'var(--red)'}"></i><span class="be"></span></span></div>`;
+    score = `<div class="chart-card lot-score">
+      <div class="glance-card-head"><h3 class="chart-title">Lot scorecard</h3><span class="chart-subtitle">return = (sales − fees &amp; shipping) ÷ all-in cost · line = break-even</span></div>
+      <div class="table-wrap fin-tablewrap"><table class="fin-table lot-table"><thead><tr>
+        <th>Lot</th><th>Units</th><th>All-in cost</th><th>Freight share</th><th>Avg sale</th><th>Days to clear</th><th>Return</th><th>Profit</th><th></th></tr></thead><tbody>
+      ${rows.map(r => `<tr><td class="lot-name"><b>Lot ${r.lot.id} · ${escapeHtmlLite(r.name)}</b><span>${escapeHtmlLite(r.source)}${r.source ? ' · ' : ''}${r.lot.date || ''}</span></td>
+        <td>${r.open ? `${r.soldN}/${r.units}` : r.units}</td><td>${fmt0(r.cost)}</td>
+        <td class="${r.freight >= 0.3 ? 'negative' : ''}">${Math.round(r.freight * 100)}%</td><td>${r.soldN ? fmt0(r.avgSale) : '—'}</td>
+        <td>${r.days == null ? '—' : r.open ? `day ${r.days}` : r.days}</td><td>${retCell(r)}</td>
+        <td class="${r.profit >= 0 ? 'positive' : 'negative'}">${fmtSigned0(r.profit)}</td><td>${_lotVerdict(r)}</td></tr>`).join('')}
+      <tr class="fin-total-row"><td>All lots</td><td>${tot.units}</td><td>${fmt0(tot.cost)}</td><td>${tot.cost ? Math.round(tot.freight / tot.cost * 100) : 0}%</td>
+        <td>${tot.soldN ? fmt0(tot.rev / tot.soldN) : '—'}</td><td></td><td><b>${tot.cost ? (tot.net / tot.cost).toFixed(2) : '0.00'}×</b></td>
+        <td class="${tot.profit >= 0 ? 'positive' : 'negative'}">${fmtSigned0(tot.profit)}</td><td class="fin-dim">before overhead</td></tr>
+      </tbody></table></div>
+      <div class="lot-lessons">${_lotLessons(rows).map(([h, t]) => `<div class="lot-lesson"><b>${h}</b>${t}</div>`).join('')}</div>
+    </div>
+    <h3 class="lot-details-title">Lot details</h3>`;
+  }
   let html = '';
   DATA.lots.forEach(lot => {
     const items = DATA.items.filter(i => i.lotId == lot.id);
@@ -1570,7 +1691,7 @@ function renderLots() {
     </div>`;
   });
   if (!html) html = '<p style="color:var(--text-dim);padding:24px">No lots yet. Click "+ New Lot" to add one.</p>';
-  document.getElementById('lotCards').innerHTML = '<div class="lot-cards">' + html + '</div>';
+  document.getElementById('lotCards').innerHTML = score + '<div class="lot-cards">' + html + '</div>';
 }
 
 function updateLotFilters() {
