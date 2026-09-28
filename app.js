@@ -1171,46 +1171,10 @@ function filterItems(items, search, lotFilter) {
 }
 
 // ===== DASHBOARD CHARTS =====
-let _chartRange = 'all'; // 30, 60, 90, or 'all'
-const _chartInstances = {}; // track Chart.js instances for cleanup
-
-function setChartRange(range) {
-  _chartRange = range;
-  document.querySelectorAll('.toggle-btn').forEach(b => {
-    b.classList.toggle('active', b.dataset.range == range);
-  });
-  renderDashboardCharts();
-}
+const _chartInstances = {}; // track Chart.js instances for cleanup (shared with finance.js)
 
 function _destroyChart(id) {
   if (_chartInstances[id]) { _chartInstances[id].destroy(); delete _chartInstances[id]; }
-}
-
-function _getRangeLabel() {
-  return _chartRange === 'all' ? 'All Time' : `Last ${_chartRange} Days`;
-}
-
-function _filterByRange(items, dateField) {
-  if (_chartRange === 'all') return items;
-  const cutoff = new Date();
-  cutoff.setDate(cutoff.getDate() - Number(_chartRange));
-  const cutoffStr = cutoff.toISOString().split('T')[0];
-  return items.filter(i => i[dateField] && i[dateField] >= cutoffStr);
-}
-
-// Week start helper — returns 'YYYY-MM-DD' of the Monday of that week
-function _weekStart(dateStr) {
-  const d = new Date(dateStr + 'T00:00:00');
-  const day = d.getDay();
-  const diff = d.getDate() - day + (day === 0 ? -6 : 1);
-  const monday = new Date(d.setDate(diff));
-  return monday.toISOString().split('T')[0];
-}
-
-// Short label for a week: 'Jan 6'
-function _weekLabel(dateStr) {
-  const d = new Date(dateStr + 'T00:00:00');
-  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
 // Chart.js default overrides for dark theme
@@ -1247,274 +1211,251 @@ function _scaleDefaults() {
   };
 }
 
-// ===== INDIVIDUAL CHART BUILDERS =====
+// ===== DASHBOARD: "JCTC at a Glance" =====
+// Four numbers, one monthly revenue/profit chart, a to-do list and an inventory
+// pipeline bar. P&L math mirrors the Money Board artifact (sold items at lot
+// cost-per-unit, minus fees/shipping, minus expenses flagged in_pl) so the
+// all-time number is the same in both places.
 
-function renderChartCategory() {
-  const open = DATA.items.filter(i => i.listingStatus !== 'Sold');
-  const counts = {};
-  open.forEach(i => { const cat = i.category || 'Other'; counts[cat] = (counts[cat] || 0) + 1; });
-  const labels = Object.keys(counts);
-  const data = Object.values(counts);
+let _plBasis = 'after'; // 'after' = minus overhead, 'before' = lot profit only
+let _todos = [];        // manual to-dos, stored in app_config.dashboard_todos
+let _todosLoaded = false;
 
-  _destroyChart('chartCategory');
-  if (!labels.length) { document.getElementById('chartCategory').parentElement.innerHTML = '<div class="chart-empty">No open inventory</div>'; return; }
+function fmt0(n) {
+  const v = Math.round(Number(n) || 0);
+  return (v < 0 ? '−' : '') + '$' + Math.abs(v).toLocaleString('en-US');
+}
+function fmtSigned0(n) { return (n >= 0 ? '+' : '') + fmt0(n); }
+function _monthKey(d) { return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'); }
 
-  _chartInstances['chartCategory'] = new Chart(document.getElementById('chartCategory'), {
-    type: 'doughnut',
-    data: { labels, datasets: [{ data, backgroundColor: CHART_COLORS.palette.slice(0, labels.length), borderColor: '#1a1d27', borderWidth: 2 }] },
-    options: { ..._chartDefaults(), cutout: '60%', plugins: { ..._chartDefaults().plugins, legend: { ...(_chartDefaults().plugins.legend), position: 'right' } } }
+// Monthly revenue, lot profit (before overhead) and overhead, all time.
+function buildMonthlyGlance() {
+  const months = {};
+  const bucket = k => months[k] || (months[k] = { rev: 0, before: 0, opex: 0 });
+  DATA.items.forEach(i => {
+    if (!isSold(i) || !i.dateSold) return;
+    const m = bucket(i.dateSold.slice(0, 7));
+    m.rev += Number(i.salePrice) || 0;
+    m.before += i.grossProfit || 0;
   });
+  (typeof FIN !== 'undefined' ? FIN.expenses : []).forEach(e => {
+    if (!e.in_pl || !e.date) return;
+    bucket(e.date.slice(0, 7)).opex += Number(e.amount) || 0;
+  });
+  Object.values(months).forEach(m => { m.after = m.before - m.opex; });
+  return months;
 }
 
-function renderChartCondition() {
-  const open = DATA.items.filter(i => i.listingStatus !== 'Sold');
-  const counts = {};
-  open.forEach(i => { const cond = i.listedCondition || 'Not Set'; counts[cond] = (counts[cond] || 0) + 1; });
-  const labels = Object.keys(counts);
-  const data = Object.values(counts);
-
-  _destroyChart('chartCondition');
-  if (!labels.length) { document.getElementById('chartCondition').parentElement.innerHTML = '<div class="chart-empty">No open inventory</div>'; return; }
-
-  _chartInstances['chartCondition'] = new Chart(document.getElementById('chartCondition'), {
-    type: 'doughnut',
-    data: { labels, datasets: [{ data, backgroundColor: CHART_COLORS.palette.slice(0, labels.length), borderColor: '#1a1d27', borderWidth: 2 }] },
-    options: { ..._chartDefaults(), cutout: '60%', plugins: { ..._chartDefaults().plugins, legend: { ...(_chartDefaults().plugins.legend), position: 'right' } } }
-  });
+// Which stage of the pipeline an open item is in.
+function pipelineStage(i) {
+  if (i.listingStatus === 'Pending') return 'pending';
+  if (i.listingStatus === 'Listed') return 'listed';
+  if (i.listingStatus === 'Drafted') return 'drafted';
+  const graded = i.cosmeticGrade && i.functionalGrade && i.listedCondition;
+  if (i.listingStatus === 'Ready' || (graded && getPhotoCount(i.sku) >= 4)) return 'ready';
+  if (graded) return 'photos';
+  return 'untested';
 }
+const PIPELINE_STAGES = [
+  { key: 'untested', label: 'Needs testing',  color: '#8b90a5' },
+  { key: 'photos',   label: 'Needs photos',   color: 'var(--orange)' },
+  { key: 'ready',    label: 'Ready to draft', color: 'var(--yellow)' },
+  { key: 'drafted',  label: 'Drafted',        color: '#a78bfa' },
+  { key: 'listed',   label: 'Listed',         color: 'var(--accent)' },
+  { key: 'pending',  label: 'Sale pending',   color: 'var(--green)' }
+];
 
-function renderChartAging() {
-  const open = DATA.items.filter(i => i.listingStatus !== 'Sold');
-  const today = new Date();
-  const buckets = { '0–15 days': 0, '15–30 days': 0, '30–45 days': 0, '45–60 days': 0, '60+ days': 0 };
-
-  open.forEach(i => {
-    // Use dateListed, or fall back to lot date, or treat as old
-    let entryDate = i.dateListed;
-    if (!entryDate) {
-      const lot = DATA.lots.find(l => l.id == i.lotId);
-      entryDate = lot ? lot.date : null;
-    }
-    if (!entryDate) { buckets['60+ days']++; return; }
-    const days = Math.floor((today - new Date(entryDate + 'T00:00:00')) / 86400000);
-    if (days < 15) buckets['0–15 days']++;
-    else if (days < 30) buckets['15–30 days']++;
-    else if (days < 45) buckets['30–45 days']++;
-    else if (days < 60) buckets['45–60 days']++;
-    else buckets['60+ days']++;
-  });
-
-  const labels = Object.keys(buckets);
-  const data = Object.values(buckets);
-  const colors = [CHART_COLORS.green, CHART_COLORS.blue, CHART_COLORS.yellow, CHART_COLORS.orange, CHART_COLORS.red];
-
-  _destroyChart('chartAging');
-
-  _chartInstances['chartAging'] = new Chart(document.getElementById('chartAging'), {
-    type: 'bar',
-    data: { labels, datasets: [{ data, backgroundColor: colors, borderRadius: 4, maxBarThickness: 60 }] },
-    options: {
-      ..._chartDefaults(),
-      maintainAspectRatio: false,
-      indexAxis: 'y',
-      plugins: { ..._chartDefaults().plugins, legend: { display: false },
-        tooltip: { ..._chartDefaults().plugins.tooltip, callbacks: { label: ctx => `${ctx.raw} items` } }
-      },
-      scales: {
-        x: { ..._scaleDefaults().x, title: { display: true, text: 'Items', color: CHART_COLORS.text, font: { size: 11 } } },
-        y: { ..._scaleDefaults().y, grid: { display: false } }
-      }
-    }
-  });
-}
-
-function renderChartSales() {
-  const sold = _filterByRange(DATA.items.filter(i => i.listingStatus === 'Sold' && i.dateSold), 'dateSold');
-  const rangeLabel = _getRangeLabel();
-  const el = document.getElementById('salesRangeLabel');
-  if (el) el.textContent = `${rangeLabel} — Weekly`;
-
-  // Group by week
-  const weeks = {};
-  sold.forEach(i => {
-    const wk = _weekStart(i.dateSold);
-    if (!weeks[wk]) weeks[wk] = { count: 0, revenue: 0 };
-    weeks[wk].count++;
-    weeks[wk].revenue += Number(i.salePrice) || 0;
-  });
-
-  const sortedWeeks = Object.keys(weeks).sort();
-  const labels = sortedWeeks.map(_weekLabel);
-  const countData = sortedWeeks.map(w => weeks[w].count);
-  const revenueData = sortedWeeks.map(w => weeks[w].revenue);
-
-  _destroyChart('chartSales');
-  if (!sortedWeeks.length) { document.getElementById('chartSales').parentElement.innerHTML = '<div class="chart-empty">No sales in this period</div>'; return; }
-
-  _chartInstances['chartSales'] = new Chart(document.getElementById('chartSales'), {
-    type: 'bar',
-    data: {
-      labels,
-      datasets: [
-        { label: 'Sales', data: countData, backgroundColor: CHART_COLORS.accent, borderRadius: 4, maxBarThickness: 40, yAxisID: 'y' },
-        { label: 'Revenue', data: revenueData, type: 'line', borderColor: CHART_COLORS.green, backgroundColor: 'rgba(52,211,153,0.1)', pointBackgroundColor: CHART_COLORS.green, pointRadius: 3, tension: 0.3, fill: true, yAxisID: 'y1' }
-      ]
-    },
-    options: {
-      ..._chartDefaults(),
-      scales: {
-        x: { ..._scaleDefaults().x },
-        y: { ..._scaleDefaults().y, position: 'left', title: { display: true, text: 'Sales', color: CHART_COLORS.text, font: { size: 11 } },
-          ticks: { ..._scaleDefaults().y.ticks, stepSize: 1 } },
-        y1: { ..._scaleDefaults().y, position: 'right', grid: { drawOnChartArea: false },
-          title: { display: true, text: 'Revenue ($)', color: CHART_COLORS.text, font: { size: 11 } },
-          ticks: { ..._scaleDefaults().y.ticks, callback: v => '$' + v } }
-      }
-    }
-  });
-}
-
-function renderChartDaysToSell() {
-  const sold = _filterByRange(DATA.items.filter(i => i.listingStatus === 'Sold' && i.dateSold && i.dateListed), 'dateSold');
-  const rangeLabel = _getRangeLabel();
-  const el = document.getElementById('daysRangeLabel');
-  if (el) el.textContent = `${rangeLabel} — Weekly`;
-
-  // Calc days-to-sell for each item, group by week sold
-  const weeks = {};
-  sold.forEach(i => {
-    const dListed = new Date(i.dateListed + 'T00:00:00');
-    const dSold = new Date(i.dateSold + 'T00:00:00');
-    const days = Math.max(0, Math.floor((dSold - dListed) / 86400000));
-    const wk = _weekStart(i.dateSold);
-    if (!weeks[wk]) weeks[wk] = [];
-    weeks[wk].push(days);
-  });
-
-  const sortedWeeks = Object.keys(weeks).sort();
-  const labels = sortedWeeks.map(_weekLabel);
-  const avgData = sortedWeeks.map(w => {
-    const arr = weeks[w];
-    return Math.round(arr.reduce((s,d) => s + d, 0) / arr.length);
-  });
-
-  _destroyChart('chartDaysToSell');
-  if (!sortedWeeks.length) { document.getElementById('chartDaysToSell').parentElement.innerHTML = '<div class="chart-empty">No data — need listed + sold dates</div>'; return; }
-
-  _chartInstances['chartDaysToSell'] = new Chart(document.getElementById('chartDaysToSell'), {
-    type: 'line',
-    data: {
-      labels,
-      datasets: [{
-        label: 'Avg Days to Sell',
-        data: avgData,
-        borderColor: CHART_COLORS.orange,
-        backgroundColor: 'rgba(251,146,60,0.1)',
-        pointBackgroundColor: CHART_COLORS.orange,
-        pointRadius: 4,
-        tension: 0.3,
-        fill: true
-      }]
-    },
-    options: {
-      ..._chartDefaults(),
-      plugins: { ..._chartDefaults().plugins, legend: { display: false },
-        tooltip: { ..._chartDefaults().plugins.tooltip, callbacks: { label: ctx => `${ctx.raw} days avg` } }
-      },
-      scales: {
-        x: { ..._scaleDefaults().x },
-        y: { ..._scaleDefaults().y, title: { display: true, text: 'Days', color: CHART_COLORS.text, font: { size: 11 } } }
-      }
-    }
-  });
-}
-
-function renderChartCumulative() {
-  const sold = _filterByRange(DATA.items.filter(i => i.listingStatus === 'Sold' && i.dateSold), 'dateSold');
-  const rangeLabel = _getRangeLabel();
-  const el = document.getElementById('cumulativeRangeLabel');
-  if (el) el.textContent = rangeLabel;
-
-  // Sort by date sold
-  const sorted = [...sold].sort((a,b) => (a.dateSold||'').localeCompare(b.dateSold||''));
-
-  _destroyChart('chartCumulative');
-  if (!sorted.length) { document.getElementById('chartCumulative').parentElement.innerHTML = '<div class="chart-empty">No sales in this period</div>'; return; }
-
-  // Build cumulative data grouped by week
-  const weeks = {};
-  let cumRevenue = 0, cumProfit = 0;
-  sorted.forEach(i => {
-    const wk = _weekStart(i.dateSold);
-    cumRevenue += Number(i.salePrice) || 0;
-    cumProfit += i.grossProfit || 0;
-    weeks[wk] = { revenue: cumRevenue, profit: cumProfit };
-  });
-
-  const sortedWeeks = Object.keys(weeks).sort();
-  const labels = sortedWeeks.map(_weekLabel);
-  const revenueData = sortedWeeks.map(w => Math.round(weeks[w].revenue * 100) / 100);
-  const profitData = sortedWeeks.map(w => Math.round(weeks[w].profit * 100) / 100);
-
-  _chartInstances['chartCumulative'] = new Chart(document.getElementById('chartCumulative'), {
-    type: 'line',
-    data: {
-      labels,
-      datasets: [
-        { label: 'Cumulative Revenue', data: revenueData, borderColor: CHART_COLORS.accent, backgroundColor: 'rgba(79,140,255,0.08)', pointBackgroundColor: CHART_COLORS.accent, pointRadius: 3, tension: 0.3, fill: true },
-        { label: 'Cumulative Profit', data: profitData, borderColor: CHART_COLORS.green, backgroundColor: 'rgba(52,211,153,0.08)', pointBackgroundColor: CHART_COLORS.green, pointRadius: 3, tension: 0.3, fill: true }
-      ]
-    },
-    options: {
-      ..._chartDefaults(),
-      plugins: { ..._chartDefaults().plugins,
-        tooltip: { ..._chartDefaults().plugins.tooltip, callbacks: { label: ctx => ctx.dataset.label + ': $' + ctx.raw.toLocaleString() } }
-      },
-      scales: {
-        x: { ..._scaleDefaults().x },
-        y: { ..._scaleDefaults().y, ticks: { ..._scaleDefaults().y.ticks, callback: v => '$' + v.toLocaleString() } }
-      }
-    }
-  });
-}
-
-// ===== RENDER ALL DASHBOARD CHARTS =====
-function renderDashboardCharts() {
-  if (typeof Chart === 'undefined') { console.warn('Chart.js not loaded yet'); return; }
-  renderChartCategory();
-  renderChartCondition();
-  renderChartAging();
-  renderChartSales();
-  renderChartDaysToSell();
-  renderChartCumulative();
-}
-
-function renderDashboard() {
+async function renderDashboard() {
   DATA.items.forEach(i => calcItem(i));
-  const total = DATA.items.length;
-  const sold = DATA.items.filter(isSold);
+  if (typeof FIN !== 'undefined' && !FIN.loaded) await loadFinanceData();
+  if (!_todosLoaded) await loadTodos();
+
+  const months = buildMonthlyGlance();
+  const now = new Date();
+  const thisKey = _monthKey(now);
+  const lastKey = _monthKey(new Date(now.getFullYear(), now.getMonth() - 1, 1));
+  const cur = months[thisKey] || { rev: 0, after: 0 };
+  const prev = months[lastKey] || { rev: 0 };
+  const allTime = Object.values(months).reduce((s, m) => s + m.after, 0);
+  const monthName = now.toLocaleDateString('en-US', { month: 'long' });
+  const change = prev.rev > 0 ? (cur.rev - prev.rev) / prev.rev : null;
+
   const open = DATA.items.filter(isOpen);
-  const listed = DATA.items.filter(isListed);
-  const totalRevenue = sold.reduce((s,i) => s + (Number(i.salePrice)||0), 0);
-  const totalCost = sold.reduce((s,i) => s + (i.unitCost||0), 0);
-  const totalFees = sold.reduce((s,i) => s + (Number(i.platformFees)||0) + (Number(i.shippingCost)||0) + (Number(i.otherCosts)||0), 0);
-  const netProfit = sold.reduce((s,i) => s + (i.grossProfit||0), 0);
-  const avgRoi = sold.length ? sold.reduce((s,i) => s + (i.roi||0), 0) / sold.length : 0;
-  const investedOpen = open.reduce((s,i) => s + (i.unitCost||0), 0);
-  const listedValue = listed.reduce((s,i) => s + (Number(i.listPrice)||0), 0);
+  const openCost = open.reduce((s, i) => s + (i.unitCost || 0), 0);
+  const listedValue = DATA.items.filter(isListed).reduce((s, i) => s + (Number(i.listPrice) || 0), 0);
 
   document.getElementById('dashboardStats').innerHTML = `
-    <div class="stat-card"><div class="label">Total Items</div><div class="value">${total}</div><div class="sub">${sold.length} sold / ${open.length} open</div></div>
-    <div class="stat-card"><div class="label">Gross Revenue</div><div class="value">${fmt(totalRevenue)}</div><div class="sub">From ${sold.length} sales</div></div>
-    <div class="stat-card"><div class="label">Net Profit</div><div class="value ${netProfit>=0?'positive':'negative'}">${fmt(netProfit)}</div><div class="sub">After ${fmt(totalFees)} in fees</div></div>
-    <div class="stat-card"><div class="label">Avg ROI (Sold)</div><div class="value ${avgRoi>=0?'positive':'negative'}">${fmtPct(avgRoi)}</div><div class="sub">Per item average</div></div>
-    <div class="stat-card"><div class="label">Open Inventory</div><div class="value">${open.length}</div><div class="sub">${fmt(investedOpen)} invested</div></div>
-    <div class="stat-card"><div class="label">Listed Value</div><div class="value">${fmt(listedValue)}</div><div class="sub">${listed.length} items listed</div></div>
-    <div class="stat-card"><div class="label">Total Lots</div><div class="value">${DATA.lots.length}</div><div class="sub">${fmt(DATA.lots.reduce((s,l)=>s+l.totalCost,0))} total invested</div></div>
-    <div class="stat-card"><div class="label">Total COGS</div><div class="value">${fmt(totalCost)}</div><div class="sub">Cost of sold items</div></div>
-  `;
+    <div class="stat-card"><div class="label">Revenue · ${monthName}</div><div class="value">${fmt0(cur.rev)}</div>
+      <div class="sub">${change == null ? 'No sales last month' : `<b class="${change >= 0 ? 'positive' : 'negative'}">${change >= 0 ? '▲' : '▼'} ${Math.abs(Math.round(change * 100))}%</b> vs last month`}</div></div>
+    <div class="stat-card"><div class="label">Profit · ${monthName}</div><div class="value ${cur.after >= 0 ? 'positive' : 'negative'}">${fmtSigned0(cur.after)}</div>
+      <div class="sub">after fees, lot cost &amp; bills</div></div>
+    <div class="stat-card"><div class="label">All-time P&amp;L</div><div class="value ${allTime >= 0 ? 'positive' : 'negative'}">${fmt0(allTime)}</div>
+      <div class="sub">${allTime < 0 ? `<b>${fmt0(-allTime)}</b> to break even` : 'In the green'}</div></div>
+    <div class="stat-card"><div class="label">Open inventory</div><div class="value">${open.length} unit${open.length === 1 ? '' : 's'}</div>
+      <div class="sub">${fmt0(openCost)} cost · ${fmt0(listedValue)} listed</div></div>`;
 
-  renderDashboardCharts();
+  renderChartMonthly(months);
+  renderTodoList(open);
+  renderPipeline(open);
+}
+
+function setPlBasis(basis) {
+  _plBasis = basis;
+  document.querySelectorAll('#plBasisToggle button').forEach(b => b.classList.toggle('on', b.dataset.basis === basis));
+  renderChartMonthly(buildMonthlyGlance());
+}
+
+// One column per month: wide revenue bar with a slim kept/lost bar inside it.
+function renderChartMonthly(months) {
+  const now = new Date();
+  const first = Object.keys(months).sort()[0];
+  const keys = [];
+  for (let n = 11; n >= 0; n--) {
+    const k = _monthKey(new Date(now.getFullYear(), now.getMonth() - n, 1));
+    if (first && k >= first) keys.push(k);
+  }
+  const rev = keys.map(k => Math.round((months[k] ? months[k].rev : 0) * 100) / 100);
+  const kept = keys.map(k => Math.round((months[k] ? months[k][_plBasis] : 0) * 100) / 100);
+  const colors = kept.map(v => v >= 0 ? CHART_COLORS.green : CHART_COLORS.red);
+  const yMin = Math.min(0, Math.floor(Math.min(0, ...kept) * 1.25 / 500) * 500);
+  const labels = keys.map(k => new Date(k + '-15T00:00:00').toLocaleDateString('en-US', { month: 'short' }));
+
+  const valueLabels = { id: 'glanceValueLabels', afterDatasetsDraw(c) {
+    if (c.width < 520) return; // too crowded on a phone; tap a bar for its tooltip
+    const ctx = c.ctx, revBars = c.getDatasetMeta(0).data, bars = c.getDatasetMeta(1).data, d = c.data.datasets[1].data;
+    ctx.save(); ctx.font = '600 11px -apple-system, BlinkMacSystemFont, sans-serif'; ctx.textAlign = 'center';
+    bars.forEach((bar, i) => {
+      const v = d[i]; if (!v && !rev[i]) return;
+      ctx.fillStyle = v >= 0 ? CHART_COLORS.green : CHART_COLORS.red;
+      ctx.fillText(fmtSigned0(v), bar.x, v >= 0 ? Math.min(revBars[i].y, bar.y) - 6 : bar.y + 14);
+    });
+    ctx.restore();
+  } };
+
+  _destroyChart('chartMonthly');
+  const el = document.getElementById('chartMonthly');
+  if (!el || typeof Chart === 'undefined') return;
+  _chartInstances['chartMonthly'] = new Chart(el, {
+    type: 'bar',
+    data: { labels, datasets: [
+      { label: 'Revenue', data: rev, backgroundColor: '#2f3446', borderRadius: 4, barPercentage: .85, categoryPercentage: .8, grouped: false, order: 2 },
+      { label: _plBasis === 'after' ? 'Profit after overhead' : 'Profit before overhead', data: kept, backgroundColor: colors, borderRadius: 3, barPercentage: .4, categoryPercentage: .8, grouped: false, order: 1 }
+    ] },
+    plugins: [valueLabels],
+    options: {
+      ..._chartDefaults(),
+      layout: { padding: { top: 18 } },
+      interaction: { mode: 'index', intersect: false },
+      plugins: { ..._chartDefaults().plugins, legend: { display: false },
+        tooltip: { ..._chartDefaults().plugins.tooltip, callbacks: { label: c => `${c.dataset.label}: ${fmt0(c.raw)}` } } },
+      scales: {
+        x: { grid: { display: false }, ticks: { color: CHART_COLORS.text, font: { size: 11 } } },
+        y: { min: yMin, border: { display: false },
+          grid: { color: c => c.tick.value === 0 ? '#8b90a5' : CHART_COLORS.grid },
+          ticks: { color: CHART_COLORS.text, font: { size: 11 }, stepSize: 1000, callback: v => fmt0(v) } }
+      }
+    }
+  });
+}
+
+// ----- To-do -----
+// Auto rows are counts from the tracker; they vanish at 0 and link to the work.
+// Manual rows are typed in and saved to app_config.dashboard_todos.
+function renderTodoList(open) {
+  const stages = {};
+  open.forEach(i => { const s = pipelineStage(i); stages[s] = (stages[s] || 0) + 1; });
+  const auto = [
+    { n: stages.pending || 0,     text: 'Ship or hand off pending sales', tone: 'r', go: "goToOpen('Pending')" },
+    { n: _repriceQueue.length,    text: 'Approve reprices',               tone: 'y', go: "goToTab('repricing')" },
+    { n: stages.drafted || 0,     text: 'Publish drafts',                 tone: 'y', go: "goToOpen('Drafted')" },
+    { n: stages.ready || 0,       text: 'Draft ready items (auto-trigger)', tone: '', go: "goToOpen('')" },
+    { n: stages.photos || 0,      text: 'Photograph items',               tone: '', go: "goToOpen('Not Listed')" },
+    { n: stages.untested || 0,    text: 'Test & grade items',             tone: '', go: "goToOpen('Not Listed')" }
+  ].filter(t => t.n > 0);
+
+  let html = auto.map(t => `<div class="todo-row todo-auto" onclick="${t.go}" title="Open these items">
+      <span class="todo-dot">→</span><span class="todo-text">${t.text}</span><b class="todo-n ${t.tone}">${t.n}</b></div>`).join('');
+  html += _todos.map(t => `<label class="todo-row${t.done ? ' done' : ''}">
+      <input type="checkbox" ${t.done ? 'checked' : ''} onchange="toggleTodo('${t.id}')">
+      <span class="todo-text">${finEsc(t.text)}</span>
+      <button type="button" class="todo-del" onclick="event.preventDefault();deleteTodo('${t.id}')" title="Remove">×</button></label>`).join('');
+  if (!html) html = '<div class="todo-empty">Nothing waiting. Nice.</div>';
+  document.getElementById('todoList').innerHTML = html;
+  const openCount = auto.length + _todos.filter(t => !t.done).length;
+  document.getElementById('todoCount').textContent = openCount ? `${openCount} open` : '';
+}
+
+async function loadTodos() {
+  try {
+    const rows = await supabase.select('app_config', 'key=eq.dashboard_todos');
+    _todos = rows.length && rows[0].value ? JSON.parse(rows[0].value) : [];
+  } catch (err) {
+    console.error('Failed to load to-dos:', err);
+    _todos = [];
+  }
+  _todosLoaded = true;
+}
+
+async function saveTodos() {
+  try {
+    const value = JSON.stringify(_todos);
+    const rows = await supabase.select('app_config', 'key=eq.dashboard_todos');
+    if (rows.length) await supabase.update('app_config', 'key=eq.dashboard_todos', { value });
+    else await supabase.insert('app_config', { key: 'dashboard_todos', value });
+  } catch (err) {
+    console.error('Failed to save to-dos:', err);
+    toast('Error saving to-do');
+  }
+}
+
+function addTodo(e) {
+  e.preventDefault();
+  const input = document.getElementById('newTodo');
+  const text = input.value.trim();
+  if (!text) return;
+  _todos.push({ id: Date.now().toString(36), text, done: false, createdAt: new Date().toISOString() });
+  input.value = '';
+  renderTodoList(DATA.items.filter(isOpen));
+  saveTodos();
+}
+
+function toggleTodo(id) {
+  const t = _todos.find(x => x.id === id);
+  if (!t) return;
+  t.done = !t.done;
+  renderTodoList(DATA.items.filter(isOpen));
+  saveTodos();
+}
+
+function deleteTodo(id) {
+  _todos = _todos.filter(x => x.id !== id);
+  renderTodoList(DATA.items.filter(isOpen));
+  saveTodos();
+}
+
+function goToTab(tab) {
+  const el = document.querySelector(`.tab[data-tab="${tab}"]`);
+  if (el) el.click();
+}
+
+function goToOpen(status) {
+  document.getElementById('filterOpenStatus').value = status;
+  goToTab('open');
+}
+
+// ----- Where inventory is -----
+function renderPipeline(open) {
+  const counts = {};
+  open.forEach(i => { const s = pipelineStage(i); counts[s] = (counts[s] || 0) + 1; });
+  document.getElementById('pipelineCount').textContent = `${open.length} open unit${open.length === 1 ? '' : 's'}`;
+  if (!open.length) {
+    document.getElementById('pipeline').innerHTML = '<div class="pipeline-empty">No open inventory. Everything is sold, so the next step is the next lot.</div>';
+    return;
+  }
+  const stages = PIPELINE_STAGES.filter(s => counts[s.key]);
+  document.getElementById('pipeline').innerHTML =
+    `<div class="pipeline-bar">${stages.map(s => `<div style="flex:${counts[s.key]};background:${s.color}" title="${s.label}: ${counts[s.key]}">${counts[s.key]}</div>`).join('')}</div>
+     <div class="glance-legend">${stages.map(s => `<span><i style="background:${s.color}"></i>${s.label}</span>`).join('')}</div>`;
 }
 
 function renderAll() {
@@ -2020,7 +1961,11 @@ async function init() {
   updateCategorySelect();
   renderDashboard();
   updateBadges();
-  loadRepriceQueue(); // populates the Repricing tab badge in the background
+  // Populates the Repricing tab badge in the background, then refreshes the
+  // dashboard's "Approve reprices" to-do count.
+  loadRepriceQueue().then(() => {
+    if (document.querySelector('.tab.active').dataset.tab === 'dashboard') renderDashboard();
+  });
 }
 
 // Update the category dropdown in the Add Item modal to use dynamic options
