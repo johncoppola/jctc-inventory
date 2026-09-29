@@ -325,7 +325,7 @@ function _renderChartPL(months) {
       datasets: [
         { label: 'Revenue', data: keys.map(k => Math.round(months[k].rev * 100) / 100), backgroundColor: CHART_COLORS.accent, borderRadius: 4, maxBarThickness: 40 },
         { label: 'Op. Expenses', data: keys.map(k => Math.round(months[k].opex * 100) / 100), backgroundColor: CHART_COLORS.orange, borderRadius: 4, maxBarThickness: 40 },
-        { label: 'Net Profit', data: keys.map(k => Math.round(months[k].net * 100) / 100), type: 'line', borderColor: CHART_COLORS.green, backgroundColor: 'rgba(52,211,153,0.1)', pointBackgroundColor: CHART_COLORS.green, pointRadius: 3, tension: 0.3 }
+        { label: 'Net Profit', data: keys.map(k => Math.round(months[k].net * 100) / 100), type: 'line', borderColor: CHART_COLORS.green, backgroundColor: 'rgba(127,199,154,0.1)', pointBackgroundColor: CHART_COLORS.green, pointRadius: 3, tension: 0.3 }
       ]
     },
     options: {

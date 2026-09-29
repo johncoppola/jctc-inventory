@@ -1177,20 +1177,20 @@ function _destroyChart(id) {
   if (_chartInstances[id]) { _chartInstances[id].destroy(); delete _chartInstances[id]; }
 }
 
-// Chart.js default overrides for dark theme
+// Chart.js default overrides for the Saddle & Gold theme (keep in sync with :root in styles.css)
 const CHART_COLORS = {
-  grid: 'rgba(46,51,71,0.6)',
-  text: '#8b90a5',
-  accent: '#4f8cff',
-  green: '#34d399',
-  red: '#f87171',
-  yellow: '#fbbf24',
-  orange: '#fb923c',
+  grid: 'rgba(58,44,33,0.7)',
+  text: '#a8957d',
+  accent: '#d6a85c',
+  green: '#7fc79a',
+  red: '#e58a73',
+  yellow: '#ecd04c',
+  orange: '#f08a4b',
   purple: '#a78bfa',
   pink: '#f472b6',
   teal: '#2dd4bf',
   blue: '#60a5fa',
-  palette: ['#4f8cff','#34d399','#fbbf24','#fb923c','#a78bfa','#f472b6','#2dd4bf','#60a5fa','#f87171','#818cf8']
+  palette: ['#d6a85c','#7fc79a','#ecd04c','#f08a4b','#a78bfa','#f472b6','#2dd4bf','#60a5fa','#e58a73','#818cf8']
 };
 
 function _chartDefaults() {
@@ -1199,7 +1199,7 @@ function _chartDefaults() {
     maintainAspectRatio: false,
     plugins: {
       legend: { labels: { color: CHART_COLORS.text, font: { size: 11 }, padding: 12, usePointStyle: true, pointStyle: 'circle', boxWidth: 8, boxHeight: 8 } },
-      tooltip: { backgroundColor: '#1a1d27', titleColor: '#e4e7ef', bodyColor: '#e4e7ef', borderColor: '#2e3347', borderWidth: 1, padding: 10, cornerRadius: 6, titleFont: { size: 12 }, bodyFont: { size: 12 } }
+      tooltip: { backgroundColor: '#221912', titleColor: '#f0e4d0', bodyColor: '#f0e4d0', borderColor: '#3a2c21', borderWidth: 1, padding: 10, cornerRadius: 6, titleFont: { size: 12 }, bodyFont: { size: 12 } }
     }
   };
 }
@@ -1258,7 +1258,7 @@ function pipelineStage(i) {
   return 'untested';
 }
 const PIPELINE_STAGES = [
-  { key: 'untested', label: 'Needs testing',  color: '#8b90a5' },
+  { key: 'untested', label: 'Needs testing',  color: 'var(--text-dim)' },
   { key: 'photos',   label: 'Needs photos',   color: 'var(--orange)' },
   { key: 'ready',    label: 'Ready to draft', color: 'var(--yellow)' },
   { key: 'drafted',  label: 'Drafted',        color: '#a78bfa' },
@@ -1339,7 +1339,7 @@ function renderChartMonthly(months) {
   _chartInstances['chartMonthly'] = new Chart(el, {
     type: 'bar',
     data: { labels, datasets: [
-      { label: 'Revenue', data: rev, backgroundColor: '#2f3446', borderRadius: 4, barPercentage: .85, categoryPercentage: .8, grouped: false, order: 2 },
+      { label: 'Revenue', data: rev, backgroundColor: '#3a2c21', borderRadius: 4, barPercentage: .85, categoryPercentage: .8, grouped: false, order: 2 },
       { label: _plBasis === 'after' ? 'Profit after overhead' : 'Profit before overhead', data: kept, backgroundColor: colors, borderRadius: 3, barPercentage: .4, categoryPercentage: .8, grouped: false, order: 1 }
     ] },
     plugins: [valueLabels],
@@ -1352,7 +1352,7 @@ function renderChartMonthly(months) {
       scales: {
         x: { grid: { display: false }, ticks: { color: CHART_COLORS.text, font: { size: 11 } } },
         y: { min: yMin, border: { display: false },
-          grid: { color: c => c.tick.value === 0 ? '#8b90a5' : CHART_COLORS.grid },
+          grid: { color: c => c.tick.value === 0 ? CHART_COLORS.text : CHART_COLORS.grid },
           ticks: { color: CHART_COLORS.text, font: { size: 11 }, stepSize: 1000, callback: v => fmt0(v) } }
       }
     }
